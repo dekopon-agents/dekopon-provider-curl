@@ -22,6 +22,12 @@ env:
   EXPECTED_SHA: c2167ce14a7aaaec55635091da233745c06e6757c5080a4a635c03ea0e82d9c0
   EXPECTED_SBOM_SHA: e360e3313bfc0f92633eb2323ac217a780c1502f0c612b00c9d216437b83f97c
   SBOM_ATTESTATION_SHA: 7d3c700e534e4bc6dd73f8cdf1bfc26c351fcedc
+  DRAFT_SOURCE_RUN_ID: "32783422553"
+  DRAFT_SOURCE_SHA: cea00ad60e96440f98621996772336aff707aae1
+  DRAFT_SOURCE_JOB_ID: "97610307074"
+  DRAFT_CLEANUP_JOB_ID: "97610977708"
+  DRAFT_RELEASE_ID: "376021870"
+  DRAFT_MARKER: provider-curl-recovery:32783422553:1
   RECOVERY_CONFIRMATION: recover-v0.1.0-from-run-32770900739
   RELEASE_RUST: "1.97.0"
   WASM_TOOLS_VERSION: "1.236.1"
@@ -264,7 +270,7 @@ jobs:
               raise SystemExit("exact self-contained notices are absent from captured component")
           PY
 
-      - name: Prove exact release/package absence immediately before mutation
+      - name: Prove the exact owned residual draft and absent package
         id: preflight
         env:
           GH_TOKEN: ${{ github.token }}
@@ -276,9 +282,40 @@ jobs:
           tags=$(git ls-remote --tags origin)
           [[ "$tags" == \
              $'69f3dd845c9b9a4aa962328340e266aa4f2ba32d\trefs/tags/v0.1.0\nb2228842c6dddc78b2eb4bfaa72c302b4bf284f2\trefs/tags/v0.1.0^{}' ]]
+
+          prior=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DRAFT_SOURCE_RUN_ID")
+          jq -e --arg sha "$DRAFT_SOURCE_SHA" --argjson id "$DRAFT_SOURCE_RUN_ID" '
+            .id == $id and .workflow_id == 341554571 and
+            .path == ".github/workflows/recover-v0.1.0.yml" and
+            .event == "workflow_dispatch" and .status == "completed" and
+            .conclusion == "failure" and .head_branch == "main" and .head_sha == $sha and
+            .run_attempt == 1 and .actor.login == "xrl"
+          ' <<<"$prior" >/dev/null
+          jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DRAFT_SOURCE_RUN_ID/jobs?per_page=100")
+          jq -e --argjson publish "$DRAFT_SOURCE_JOB_ID" \
+            --argjson cleanup "$DRAFT_CLEANUP_JOB_ID" '
+            .total_count == 3 and
+            ([.jobs[] | {id, name, conclusion}] | sort_by(.id)) == ([
+              {id: 97610206789, name: "Verify the exact already-bound tagged SBOM",
+                conclusion: "success"},
+              {id: $publish, name: "Publish only the captured tagged component",
+                conclusion: "failure"},
+              {id: $cleanup, name: "Roll back only recovery-owned release/package state on failure",
+                conclusion: "success"}
+            ] | sort_by(.id))
+          ' <<<"$jobs" >/dev/null
+
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             | jq 'add // []' >"$RUNNER_TEMP/releases-before.json"
-          [[ "$(jq length "$RUNNER_TEMP/releases-before.json")" == 0 ]]
+          jq -e --argjson id "$DRAFT_RELEASE_ID" --arg marker "$DRAFT_MARKER" '
+            length == 1 and .[0].id == $id and .[0].tag_name == "v0.1.0" and
+            .[0].name == "v0.1.0" and .[0].target_commitish == "main" and
+            .[0].draft == true and .[0].prerelease == false and
+            ((.[0].body // "") | startswith($marker)) and
+            (.[0].assets | length) == 0 and
+            .[0].author.login == "github-actions[bot]" and .[0].author.id == 41898282
+          ' "$RUNNER_TEMP/releases-before.json" >/dev/null
+
           body="$RUNNER_TEMP/package-before.json"
           status=$(curl --silent --show-error --location \
             --output "$body" --write-out '%{http_code}' \
@@ -301,34 +338,21 @@ jobs:
               ;;
           esac
 
-      - name: Create and capture one exact draft release
+      - name: Capture the exact marker-owned residual draft
         id: create
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          marker="provider-curl-recovery:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
-          printf '%s\n\n%s\n' \
-            "$marker" \
-            'Bounded unauthenticated HTTP GET provider for Dekopon 0.11.1. Verify the component with the attached checksum and public GitHub attestations.' \
-            >"$RUNNER_TEMP/release-notes.md"
-          gh release create "$SOURCE_TAG" \
-            --verify-tag \
-            --draft \
-            --title "$SOURCE_TAG" \
-            --notes-file "$RUNNER_TEMP/release-notes.md" >/dev/null
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            | jq 'add // []' >"$RUNNER_TEMP/releases-after-create.json"
-          release_id=$(jq -er --arg tag "$SOURCE_TAG" --arg marker "$marker" '
-            [.[] | select(
-              .tag_name == $tag and .draft == true and .prerelease == false and
-              ((.body // "") | startswith($marker)) and (.assets | length) == 0
-            )] | if length == 1 then .[0].id else error("owned draft cardinality") end
-          ' "$RUNNER_TEMP/releases-after-create.json")
-          [[ "$release_id" =~ ^[0-9]+$ ]]
-          echo "release_id=$release_id" >>"$GITHUB_OUTPUT"
-          echo "marker=$marker" >>"$GITHUB_OUTPUT"
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/$DRAFT_RELEASE_ID")
+          jq -e --argjson id "$DRAFT_RELEASE_ID" --arg marker "$DRAFT_MARKER" '
+            .id == $id and .tag_name == "v0.1.0" and .draft == true and
+            .prerelease == false and ((.body // "") | startswith($marker)) and
+            (.assets | length) == 0 and .author.login == "github-actions[bot]"
+          ' <<<"$release" >/dev/null
+          echo "release_id=$DRAFT_RELEASE_ID" >>"$GITHUB_OUTPUT"
+          echo "marker=$DRAFT_MARKER" >>"$GITHUB_OUTPUT"
 
       - name: Upload exact assets and capture immutable asset IDs
         id: upload

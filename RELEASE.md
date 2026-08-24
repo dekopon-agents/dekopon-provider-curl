@@ -71,3 +71,12 @@ that request form available. All no-op rollbacks confirmed package/release absen
 recovery pins and reuses the one immutable SBOM attestation and uses the already proven organization
 pattern, `gh release create --verify-tag`, with marker-owned fixed notes and no `target_commitish` or
 generated-notes request. It does not create a duplicate attestation.
+
+Run
+[`32783422553`](https://github.com/dekopon-agents/dekopon-provider-curl/actions/runs/32783422553)
+successfully created that marker-owned draft, but its immediate list request raced GitHub's draft
+visibility and failed to capture the ID; the generic rollback therefore had no ID to delete. The
+next control commit pins the exact residual draft ID `376021870`, marker, creating run/commit/job,
+bot author, empty asset set, and successful no-package cleanup. It refuses every other release,
+continues that existing transaction rather than creating/reusing an unowned draft, and fixes the
+normal tag workflow with a bounded post-create visibility poll.
