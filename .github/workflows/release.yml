@@ -692,22 +692,24 @@ jobs:
           cmp dist/curl-provider.wasm.sha256 \
             "$RUNNER_TEMP/prepublish/curl-provider.wasm.sha256"
 
-          # Attestations and GHCR are public before release publication; verify them anonymously and
-          # bind both attestations to this exact source commit as well as this tag ref.
-          env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+          # Attestations and GHCR are public before release publication; fetch each bundle without
+          # credentials, verify from a clean gh config, and bind it to this exact tag commit.
+          ./scripts/verify-attestation-anonymously.sh \
             "$RUNNER_TEMP/prepublish/curl-provider.wasm" \
-            --repo "$GITHUB_REPOSITORY" \
-            --predicate-type 'https://slsa.dev/provenance/v1' \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
-            --source-ref "$GITHUB_REF" \
-            --source-digest "$GITHUB_SHA" >/dev/null
-          env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+            "$GITHUB_REPOSITORY" \
+            "$EXPECTED_SHA" \
+            'https://slsa.dev/provenance/v1' \
+            "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            "$GITHUB_REF" \
+            "$GITHUB_SHA"
+          ./scripts/verify-attestation-anonymously.sh \
             "$RUNNER_TEMP/prepublish/curl-provider.wasm" \
-            --repo "$GITHUB_REPOSITORY" \
-            --predicate-type 'https://cyclonedx.org/bom' \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
-            --source-ref "$GITHUB_REF" \
-            --source-digest "$GITHUB_SHA" >/dev/null
+            "$GITHUB_REPOSITORY" \
+            "$EXPECTED_SHA" \
+            'https://cyclonedx.org/bom' \
+            "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            "$GITHUB_REF" \
+            "$GITHUB_SHA"
 
           wasm-tools component wit --json "$RUNNER_TEMP/prepublish/curl-provider.wasm" \
             >"$RUNNER_TEMP/wit.json"
@@ -808,6 +810,10 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Check out the anonymous verifier without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Install exact public verification tools
         shell: bash
         run: |
@@ -855,18 +861,22 @@ jobs:
                   {name: "curl-provider.wasm.sha256", id: $checksum_id}
                 ] | sort_by(.name))
             ' <<<"$release" >/dev/null
-          gh attestation verify "$RUNNER_TEMP/release/curl-provider.wasm" \
-            --repo dekopon-agents/dekopon-provider-curl \
-            --predicate-type 'https://slsa.dev/provenance/v1' \
-            --signer-workflow dekopon-agents/dekopon-provider-curl/.github/workflows/release.yml \
-            --source-ref "$GITHUB_REF" \
-            --source-digest "$GITHUB_SHA" >/dev/null
-          gh attestation verify "$RUNNER_TEMP/release/curl-provider.wasm" \
-            --repo dekopon-agents/dekopon-provider-curl \
-            --predicate-type 'https://cyclonedx.org/bom' \
-            --signer-workflow dekopon-agents/dekopon-provider-curl/.github/workflows/release.yml \
-            --source-ref "$GITHUB_REF" \
-            --source-digest "$GITHUB_SHA" >/dev/null
+          ./scripts/verify-attestation-anonymously.sh \
+            "$RUNNER_TEMP/release/curl-provider.wasm" \
+            dekopon-agents/dekopon-provider-curl \
+            "$EXPECTED_SHA" \
+            'https://slsa.dev/provenance/v1' \
+            dekopon-agents/dekopon-provider-curl/.github/workflows/release.yml \
+            "$GITHUB_REF" \
+            "$GITHUB_SHA"
+          ./scripts/verify-attestation-anonymously.sh \
+            "$RUNNER_TEMP/release/curl-provider.wasm" \
+            dekopon-agents/dekopon-provider-curl \
+            "$EXPECTED_SHA" \
+            'https://cyclonedx.org/bom' \
+            dekopon-agents/dekopon-provider-curl/.github/workflows/release.yml \
+            "$GITHUB_REF" \
+            "$GITHUB_SHA"
           wasm-tools component wit --json "$RUNNER_TEMP/release/curl-provider.wasm" \
             >"$RUNNER_TEMP/wit.json"
           wasm-tools component wit "$RUNNER_TEMP/release/curl-provider.wasm" \

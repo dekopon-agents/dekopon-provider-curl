@@ -92,14 +92,14 @@ jobs:
               ;;
             200)
               [[ "$(jq '.attestations | length' "$output")" == 1 ]]
-              env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+              ./scripts/verify-attestation-anonymously.sh \
                 "$RUNNER_TEMP/tagged/component/curl-provider.wasm" \
-                --repo "$GITHUB_REPOSITORY" \
-                --predicate-type 'https://cyclonedx.org/bom' \
-                --signer-workflow \
-                  "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
-                --source-ref "$GITHUB_REF" \
-                --source-digest "$GITHUB_SHA" >/dev/null
+                "$GITHUB_REPOSITORY" \
+                "$EXPECTED_SHA" \
+                'https://cyclonedx.org/bom' \
+                "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
+                "$GITHUB_REF" \
+                "$GITHUB_SHA"
               echo 'exists=true' >>"$GITHUB_OUTPUT"
               ;;
             *)
@@ -135,14 +135,14 @@ jobs:
             sleep 5
           done
           test -s "$RUNNER_TEMP/sbom-attestations.json"
-          env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+          ./scripts/verify-attestation-anonymously.sh \
             "$RUNNER_TEMP/tagged/component/curl-provider.wasm" \
-            --repo "$GITHUB_REPOSITORY" \
-            --predicate-type 'https://cyclonedx.org/bom' \
-            --signer-workflow \
-              "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
-            --source-ref "$GITHUB_REF" \
-            --source-digest "$GITHUB_SHA" >/dev/null
+            "$GITHUB_REPOSITORY" \
+            "$EXPECTED_SHA" \
+            'https://cyclonedx.org/bom' \
+            "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
+            "$GITHUB_REF" \
+            "$GITHUB_SHA"
           python3 - \
             "$RUNNER_TEMP/sbom-attestations.json" \
             "$RUNNER_TEMP/tagged/sbom/curl-provider.cdx.json" \
@@ -574,21 +574,22 @@ jobs:
           cmp dist/curl-provider.wasm.sha256 \
             "$RUNNER_TEMP/prepublish/curl-provider.wasm.sha256"
 
-          env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+          ./scripts/verify-attestation-anonymously.sh \
             "$RUNNER_TEMP/prepublish/curl-provider.wasm" \
-            --repo "$GITHUB_REPOSITORY" \
-            --predicate-type 'https://slsa.dev/provenance/v1' \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
-            --source-ref "refs/tags/$SOURCE_TAG" \
-            --source-digest "$SOURCE_SHA" >/dev/null
-          env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+            "$GITHUB_REPOSITORY" \
+            "$EXPECTED_SHA" \
+            'https://slsa.dev/provenance/v1' \
+            "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            "refs/tags/$SOURCE_TAG" \
+            "$SOURCE_SHA"
+          ./scripts/verify-attestation-anonymously.sh \
             "$RUNNER_TEMP/prepublish/curl-provider.wasm" \
-            --repo "$GITHUB_REPOSITORY" \
-            --predicate-type 'https://cyclonedx.org/bom' \
-            --signer-workflow \
-              "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
-            --source-ref "$GITHUB_REF" \
-            --source-digest "$GITHUB_SHA" >/dev/null
+            "$GITHUB_REPOSITORY" \
+            "$EXPECTED_SHA" \
+            'https://cyclonedx.org/bom' \
+            "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
+            "$GITHUB_REF" \
+            "$GITHUB_SHA"
 
           printf '{"auths":{}}\n' >"$RUNNER_TEMP/anonymous-auth.json"
           anonymous=(--registry-config "$RUNNER_TEMP/anonymous-auth.json")
@@ -675,19 +676,22 @@ jobs:
                   {name: "curl-provider.wasm.sha256", id: $checksum_id}
                 ] | sort_by(.name))
             ' <<<"$release" >/dev/null
-          gh attestation verify "$RUNNER_TEMP/anonymous-release/curl-provider.wasm" \
-            --repo "$GITHUB_REPOSITORY" \
-            --predicate-type 'https://slsa.dev/provenance/v1' \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
-            --source-ref "refs/tags/$SOURCE_TAG" \
-            --source-digest "$SOURCE_SHA" >/dev/null
-          gh attestation verify "$RUNNER_TEMP/anonymous-release/curl-provider.wasm" \
-            --repo "$GITHUB_REPOSITORY" \
-            --predicate-type 'https://cyclonedx.org/bom' \
-            --signer-workflow \
-              "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
-            --source-ref "$GITHUB_REF" \
-            --source-digest "$GITHUB_SHA" >/dev/null
+          ./scripts/verify-attestation-anonymously.sh \
+            "$RUNNER_TEMP/anonymous-release/curl-provider.wasm" \
+            "$GITHUB_REPOSITORY" \
+            "$EXPECTED_SHA" \
+            'https://slsa.dev/provenance/v1' \
+            "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            "refs/tags/$SOURCE_TAG" \
+            "$SOURCE_SHA"
+          ./scripts/verify-attestation-anonymously.sh \
+            "$RUNNER_TEMP/anonymous-release/curl-provider.wasm" \
+            "$GITHUB_REPOSITORY" \
+            "$EXPECTED_SHA" \
+            'https://cyclonedx.org/bom' \
+            "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
+            "$GITHUB_REF" \
+            "$GITHUB_SHA"
           printf '{"auths":{}}\n' >"$RUNNER_TEMP/final-anonymous-auth.json"
           anonymous=(--registry-config "$RUNNER_TEMP/final-anonymous-auth.json")
           [[ "$("$RUNNER_TEMP/oras" resolve "${anonymous[@]}" \

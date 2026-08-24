@@ -49,3 +49,11 @@ helper refuses expired or substituted artifacts, re-verifies the tagged provenan
 builds provider bytes. The workflow attests the exact captured CycloneDX JSON through the pinned
 underlying `actions/attest` action, then applies the same owned-draft, private-GHCR, prepublication,
 finalization, anonymous-verification, and rollback controls. It cannot recover another version.
+
+The first recovery dispatch,
+[`32775319816`](https://github.com/dekopon-agents/dekopon-provider-curl/actions/runs/32775319816),
+stopped before attestation or publication because `gh attestation verify` refuses API lookup on a
+fresh Actions runner without `GH_TOKEN`, even for a public repository. Its no-op rollback again
+confirmed absence. The verifier now anonymously downloads the public Sigstore bundle with `curl`
+and passes that local bundle to `gh` under a clean config directory with both token variables unset;
+this makes the anonymous boundary executable rather than relying on ambient CLI login state.

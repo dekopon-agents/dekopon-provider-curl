@@ -25,7 +25,7 @@ repo=dekopon-agents/dekopon-provider-curl
 
 : "${GH_TOKEN:?GH_TOKEN is required to read the captured Actions artifacts}"
 [[ "${GITHUB_REPOSITORY:-$repo}" == "$repo" ]]
-for command in gh git jq shasum unzip; do
+for command in curl gh git jq shasum unzip; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "error: $command is required" >&2
     exit 1
@@ -155,17 +155,14 @@ jq -e '
 
 # The first attestation step of the tagged run succeeded. It is the immutable bridge from the tag
 # commit to these bytes; recovery must never proceed from an unattested or locally rebuilt file.
-env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+"$root/scripts/verify-attestation-anonymously.sh" \
   "$destination/component/curl-provider.wasm" \
-  --repo "$repo" \
-  --predicate-type 'https://slsa.dev/provenance/v1' \
-  --signer-workflow "$repo/.github/workflows/release.yml" \
-  --source-ref "refs/tags/$tag" \
-  --source-digest "$source_sha" >/dev/null
-
-provenance=$(gh api \
-  "repos/$repo/attestations/sha256:$component_sha?predicate_type=https%3A%2F%2Fslsa.dev%2Fprovenance%2Fv1")
-[[ "$(jq '.attestations | length' <<<"$provenance")" == 1 ]]
+  "$repo" \
+  "$component_sha" \
+  'https://slsa.dev/provenance/v1' \
+  "$repo/.github/workflows/release.yml" \
+  "refs/tags/$tag" \
+  "$source_sha"
 
 printf 'verified immutable tagged artifacts: run=%s component=sha256:%s sbom=sha256:%s\n' \
   "$source_run_id" "$component_sha" "$sbom_sha"
