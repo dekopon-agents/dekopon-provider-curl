@@ -19,7 +19,7 @@ With the pinned v0.1.0 release component, Rust 1.97.0, wasm-tools 1.236.1, and D
 0.11.1/36.0.14, the measurement made on 2026-08-24 was:
 
 - **43,196,521 fuel units** for the stressed invocation;
-- **3,604,480 bytes** as the largest observed guest-memory request;
+- **3,670,016 bytes** as the largest observed guest-memory request;
 - zero denied memory-growth requests.
 
 The committed 64 million fuel gate leaves deterministic headroom without falling back to the

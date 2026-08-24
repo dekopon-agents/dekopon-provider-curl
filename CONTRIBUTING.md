@@ -8,8 +8,8 @@ Keep the provider closed and deterministic:
   host capability;
 - never commit `.wasm`, checksums, `dist/`, or `target/`;
 - keep every public failure fixed and secret-free;
-- regenerate and review `THIRD_PARTY_NOTICES.md` and `security/wasm-dependencies.txt` after a lock
-  change.
+- regenerate and review the isolated normal/build graph in `security/wasm-dependencies.txt` and the
+  checksum-verified, self-contained `THIRD_PARTY_NOTICES.md` bundle after a lock change.
 
 Before opening a change, run the complete acceptance command block in `README.md`. Tests use native
 mocks or loopback listeners only and must never depend on the public network.

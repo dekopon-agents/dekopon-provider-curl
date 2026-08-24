@@ -185,11 +185,13 @@ credential in its response.
 Release bytes use Rust 1.97.0 and wasm-tools 1.236.1; MSRV is Rust 1.89.0. `build.sh` only targets
 `wasm32-unknown-unknown`, normalizes crate metadata, remaps source/Cargo/sysroot paths, embeds the
 exact deterministic notices in `dekopon.third-party-notices`, componentizes, validates, enforces
-512 KiB, and writes a checksum. `wasm32-wasip2` is forbidden.
+512 KiB, and writes a checksum. The inventory and SBOM resolve an isolated 43-crate normal/build
+graph so native dev features cannot leak into shipped evidence. `wasm32-wasip2` is forbidden.
 
 ```console
 rustup toolchain install 1.89.0 --profile minimal --component clippy --component rustfmt
 rustup toolchain install 1.97.0 --profile minimal
+rustup target add wasm32-unknown-unknown --toolchain 1.89.0
 rustup target add wasm32-unknown-unknown --toolchain 1.97.0
 cargo install wasm-tools --version 1.236.1 --locked
 cargo install wasmtime-cli --version 48.0.0 --locked
@@ -202,6 +204,13 @@ cargo +1.89.0 test --locked --lib
 cargo +1.89.0 check --locked --target wasm32-unknown-unknown
 cargo deny --locked check advisories licenses bans sources
 ./scripts/dependency_inventory.py check-sources
+./scripts/dependency_inventory.py inventory --output /tmp/curl-dependencies.txt
+./scripts/dependency_inventory.py notices --output /tmp/curl-notices.md
+cmp security/wasm-dependencies.txt /tmp/curl-dependencies.txt
+cmp THIRD_PARTY_NOTICES.md /tmp/curl-notices.md
+shellcheck build.sh scripts/*.sh
+actionlint .github/workflows/*.yml
+zizmor --pedantic .github/workflows/*.yml
 ./build.sh
 ./scripts/verify-component.sh
 cargo +1.97.0 test --locked --test broker_host
@@ -225,4 +234,6 @@ The eventual `v0.1.0` tag publishes exactly two GitHub assets (`curl-provider.wa
 No repository, tag, release, or package is created by the implementation step itself.
 
 The provider is MIT OR Apache-2.0, at your option. See `LICENSE-MIT`, `LICENSE-APACHE`, and the
-embedded deterministic `THIRD_PARTY_NOTICES.md`. The shipped closure has no LGPL obligation.
+embedded deterministic `THIRD_PARTY_NOTICES.md`. That self-contained bundle verifies exact
+`Cargo.lock` archive checksums and includes deduplicated full license, exception, copyright, and
+NOTICE texts rather than relying on external links. The shipped closure has no LGPL obligation.

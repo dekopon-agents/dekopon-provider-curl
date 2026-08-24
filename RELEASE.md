@@ -5,20 +5,31 @@ publish`, push an OCI artifact by hand, or create a release manually.
 
 1. On clean `main`, run all commands in the README's acceptance section, including the two-archive
    reproducibility gate.
-2. Confirm `git status --short` is empty and the package version is exactly `0.1.0`.
+2. Confirm `git status --short` is empty, the package version is exactly `0.1.0`, no release exists
+   for `v0.1.0`, and the `ghcr.io/dekopon-agents/provider-curl` package is wholly absent.
 3. Create and push an **annotated** tag: `git tag -a v0.1.0 -m 'v0.1.0' && git push origin v0.1.0`.
-4. The workflow performs: build → provenance/SBOM attestations → exact draft assets → GHCR
-   `0.1.0` → explicit finalization → anonymous verification. It never creates `latest` or
+4. The workflow performs: MSRV/source/build gates → provenance/SBOM attestations → one newly owned
+   draft with exact assets → a privately verified GHCR `0.1.0` manifest → prepublication
+   re-verification → explicit finalization → anonymous verification. It never creates `latest` or
    `staging`.
 5. Confirm release assets are exactly `curl-provider.wasm` and
    `curl-provider.wasm.sha256`. Confirm the public OCI manifest has one `application/wasm` layer,
    title `curl-provider.wasm`, and only tag `0.1.0`.
 
 The workflow refuses lightweight/non-SemVer tags, a tag not resolving to the event SHA, a tag not on
-`main`, a package-version mismatch, an existing published release/tag, wrong bytes, wrong WIT,
-missing attestations, extra assets/layers/tags, and non-public GHCR. Newly created drafts and OCI
-versions are removed on later failure where GitHub permits cleanup; attestations are immutable and
-may remain as non-release evidence for a failed digest.
+`main`, a package-version mismatch, **any** existing draft/published release for the tag, **any**
+existing GHCR package state, wrong bytes, wrong WIT, missing commit-bound attestations, and extra
+assets/layers/tags. It captures release, asset, package, package-version, and OCI manifest IDs or
+digests only after creation. Immediately before publication it re-peels the tag, downloads the draft
+assets by captured immutable IDs, checks their bytes and checksum against the Actions artifact,
+checks WIT, anonymously verifies attestations and digest-pinned OCI bytes, and then changes only the
+captured release.
+
+A failed or cancelled downstream job invokes rollback. Rollback first makes this run's package
+private, deletes the exact captured release ID even if this run already finalized it, deletes only
+the captured package version ID/manifest digest, and verifies that the initially absent package
+state is restored. It never discovers ownership through a mutable tag, and cleanup errors fail
+loudly. Attestations are immutable and may remain as non-release evidence for a failed digest.
 
 GitHub release finalization explicitly sets `draft: false`, `prerelease: false`, and
 `make_latest: "false"`.

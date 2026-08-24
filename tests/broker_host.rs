@@ -244,7 +244,7 @@ async fn exact_loopback_grant_sends_one_bodyless_get_without_credentials() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn missing_wrong_method_wrong_port_and_plaintext_grants_are_terminal() {
+async fn missing_wrong_host_method_port_and_plaintext_grants_are_terminal() {
     let registry = BrokerProviderRegistry::load([component()], BrokerHostLimits::default())
         .await
         .expect("broker loads component");
@@ -252,6 +252,8 @@ async fn missing_wrong_method_wrong_port_and_plaintext_grants_are_terminal() {
     let mut cases = Vec::new();
     cases.push(("missing", ExecutionConstraints::default(), "denied"));
     cases.push(("wrong-port", profile("127.0.0.1:10"), "denied"));
+    // Same port, different literal loopback host: enforcing only the port must not authorize.
+    cases.push(("wrong-host-same-port", profile("127.0.0.2:9"), "denied"));
     let mut wrong_method = profile("127.0.0.1:9");
     wrong_method.http.as_mut().unwrap().allowed_methods = vec!["POST".to_owned()];
     cases.push(("wrong-method", wrong_method, "denied"));
@@ -267,6 +269,7 @@ async fn missing_wrong_method_wrong_port_and_plaintext_grants_are_terminal() {
     cases.push(("request-too-large", request_too_large, "byte-limit"));
 
     for (name, constraints, reason) in cases {
+        let calls_before = registry.metrics().snapshot().http_requests;
         let failure = registry
             .invoke(authorized(name, json!({"uri": uri}), constraints), None)
             .await
@@ -279,6 +282,11 @@ async fn missing_wrong_method_wrong_port_and_plaintext_grants_are_terminal() {
             "{name}: {failure}"
         );
         assert!(failure.http_calls.is_empty(), "{name}");
+        assert_eq!(
+            registry.metrics().snapshot().http_requests,
+            calls_before,
+            "{name}: denial must occur before any HTTP call"
+        );
     }
 }
 

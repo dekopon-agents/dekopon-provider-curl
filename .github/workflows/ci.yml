@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   MSRV: "1.89.0"
   RELEASE_RUST: "1.97.0"
@@ -53,6 +57,26 @@ jobs:
           ./scripts/dependency_inventory.py notices --output "$RUNNER_TEMP/notices.md"
           cmp security/wasm-dependencies.txt "$RUNNER_TEMP/dependencies.txt"
           cmp THIRD_PARTY_NOTICES.md "$RUNNER_TEMP/notices.md"
+          cargo tree --locked --target wasm32-unknown-unknown -e normal,build \
+            --prefix none --format '{p}' >"$RUNNER_TEMP/cargo-tree.txt"
+          python3 - "$RUNNER_TEMP/cargo-tree.txt" security/wasm-dependencies.txt <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          tree = set()
+          for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
+              match = re.match(r"(.+?) v([^ ]+)", line)
+              if match and match.group(1) != "dekopon-curl-provider":
+                  tree.add(match.groups())
+          inventory = set()
+          for line in pathlib.Path(sys.argv[2]).read_text().splitlines():
+              if line and not line.startswith("#"):
+                  name, version, _source = line.split(" ", 2)
+                  inventory.add((name, version))
+          if tree != inventory or len(tree) != 43:
+              raise SystemExit("isolated inventory differs from cargo tree normal/build graph")
+          PY
           if grep -Eq 'source = "git\+|path\+' Cargo.lock; then
             echo "error: lockfile contains a Git or path source" >&2
             exit 1
@@ -80,7 +104,7 @@ jobs:
             .bomFormat == "CycloneDX" and
             .specVersion == "1.5" and
             .metadata.component.name == "dekopon-curl-provider" and
-            (.components | length) == 49
+            (.components | length) == 43
           ' "$RUNNER_TEMP/first.cdx.json" >/dev/null
           if grep -aF "$GITHUB_WORKSPACE" "$RUNNER_TEMP/first.cdx.json"; then
             echo "error: SBOM retained the checkout path" >&2
