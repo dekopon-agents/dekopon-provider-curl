@@ -231,7 +231,6 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write # Draft discovery, creation, asset upload, and deletion.
-      pull-requests: read # Required only by generate_release_notes during draft creation.
     outputs:
       release_id: ${{ steps.create.outputs.release_id }}
       wasm_asset_id: ${{ steps.upload.outputs.wasm_asset_id }}
@@ -283,9 +282,9 @@ jobs:
             -f tag_name="$GITHUB_REF_NAME" \
             -f target_commitish="$GITHUB_SHA" \
             -f name="$GITHUB_REF_NAME" \
+            -f body='Bounded unauthenticated HTTP GET provider for Dekopon 0.11.1. Verify the component with the attached checksum and public GitHub attestations.' \
             -F draft=true \
-            -F prerelease=false \
-            -F generate_release_notes=true >"$RUNNER_TEMP/created-release.json"
+            -F prerelease=false >"$RUNNER_TEMP/created-release.json"
           release_id=$(jq -er --arg tag "$GITHUB_REF_NAME" '
             select(.tag_name == $tag and .draft == true and .prerelease == false) | .id
           ' "$RUNNER_TEMP/created-release.json")

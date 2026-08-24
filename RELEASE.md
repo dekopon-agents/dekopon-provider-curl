@@ -61,7 +61,10 @@ this makes the anonymous boundary executable rather than relying on ambient CLI 
 Recovery run
 [`32777291858`](https://github.com/dekopon-agents/dekopon-provider-curl/actions/runs/32777291858)
 then created and exactly verified the CycloneDX attestation at recovery commit
-`7d3c700e534e4bc6dd73f8cdf1bfc26c351fcedc`, but draft creation was denied before any release
-existed because generated release notes additionally require `pull-requests: read`. Its no-op
-rollback confirmed package/release absence. Subsequent recovery pins and reuses that one immutable
-SBOM attestation, grants only the missing read permission, and does not create a duplicate.
+`7d3c700e534e4bc6dd73f8cdf1bfc26c351fcedc`, but the integration was denied while asking GitHub to
+generate release notes, before any release existed. Run
+[`32779510352`](https://github.com/dekopon-agents/dekopon-provider-curl/actions/runs/32779510352)
+proved that adding `pull-requests: read` did not make that generated-notes operation available. Both
+no-op rollbacks confirmed package/release absence. Subsequent recovery pins and reuses the one
+immutable SBOM attestation, supplies fixed deterministic release notes, and does not create a
+duplicate.

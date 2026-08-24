@@ -168,7 +168,6 @@ jobs:
       actions: read # Download only the immutable SOURCE_RUN_ID artifacts.
       contents: write # Own one draft, upload assets, and finalize its captured ID.
       packages: write # Own one previously absent GHCR package/version.
-      pull-requests: read # Required only to generate release notes for the captured draft.
     outputs:
       prior_visibility: ${{ steps.preflight.outputs.prior_visibility }}
       release_id: ${{ steps.create.outputs.release_id }}
@@ -312,9 +311,9 @@ jobs:
             -f tag_name="$SOURCE_TAG" \
             -f target_commitish="$SOURCE_SHA" \
             -f name="$SOURCE_TAG" \
+            -f body='Bounded unauthenticated HTTP GET provider for Dekopon 0.11.1. Verify the component with the attached checksum and public GitHub attestations.' \
             -F draft=true \
-            -F prerelease=false \
-            -F generate_release_notes=true >"$RUNNER_TEMP/created-release.json"
+            -F prerelease=false >"$RUNNER_TEMP/created-release.json"
           release_id=$(jq -er --arg tag "$SOURCE_TAG" '
             select(.tag_name == $tag and .draft == true and .prerelease == false) | .id
           ' "$RUNNER_TEMP/created-release.json")
