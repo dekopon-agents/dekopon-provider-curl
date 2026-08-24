@@ -33,3 +33,19 @@ loudly. Attestations are immutable and may remain as non-release evidence for a 
 
 GitHub release finalization explicitly sets `draft: false`, `prerelease: false`, and
 `make_latest: "false"`.
+
+## Pinned v0.1.0 recovery
+
+Tagged run [`32770900739`](https://github.com/dekopon-agents/dekopon-provider-curl/actions/runs/32770900739)
+built and reproducibly verified the final bytes and created their build-provenance attestation, then
+failed before publication because `actions/attest-sbom` v2.4.0 incorrectly requires the optional
+CycloneDX `serialNumber` field. Its successful rollback confirmed that no release or package was
+left behind. The annotated tag was preserved unchanged.
+
+`.github/workflows/recover-v0.1.0.yml` is the only authorized recovery. It is intentionally pinned to
+the failed run, build job, workflow, tag object, source commit, two immutable Actions artifact IDs,
+archive digests and sizes, component/checksum/SBOM digests, and exact confirmation phrase. The
+helper refuses expired or substituted artifacts, re-verifies the tagged provenance, and never
+builds provider bytes. The workflow attests the exact captured CycloneDX JSON through the pinned
+underlying `actions/attest` action, then applies the same owned-draft, private-GHCR, prepublication,
+finalization, anonymous-verification, and rollback controls. It cannot recover another version.

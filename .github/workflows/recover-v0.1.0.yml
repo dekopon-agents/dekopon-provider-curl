@@ -1,0 +1,905 @@
+name: Recover v0.1.0 from immutable tagged artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Exact acknowledgement for the one pinned recovery
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-v0.1.0
+  cancel-in-progress: false
+
+env:
+  SOURCE_RUN_ID: "32770900739"
+  SOURCE_SHA: b2228842c6dddc78b2eb4bfaa72c302b4bf284f2
+  SOURCE_TAG: v0.1.0
+  EXPECTED_SHA: c2167ce14a7aaaec55635091da233745c06e6757c5080a4a635c03ea0e82d9c0
+  EXPECTED_SBOM_SHA: e360e3313bfc0f92633eb2323ac217a780c1502f0c612b00c9d216437b83f97c
+  RECOVERY_CONFIRMATION: recover-v0.1.0-from-run-32770900739
+  RELEASE_RUST: "1.97.0"
+  WASM_TOOLS_VERSION: "1.236.1"
+  ORAS_VERSION: "1.2.3"
+  ORAS_LINUX_AMD64_SHA256: b4efc97a91f471f323f193ea4b4d63d8ff443ca3aab514151a30751330852827
+  OCI_REPOSITORY: ghcr.io/dekopon-agents/provider-curl
+  PACKAGE_ENDPOINT: orgs/dekopon-agents/packages/container/provider-curl
+
+jobs:
+  attest-sbom:
+    name: Bind the exact tagged SBOM without rebuilding bytes
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read # Read only the two immutable artifacts captured from SOURCE_RUN_ID.
+      contents: read
+      id-token: write # Sign the narrowly scoped recovery SBOM attestation.
+      attestations: write # Persist the recovery SBOM attestation.
+    steps:
+      - name: Check out the auditable recovery commit without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify confirmation and synchronized recovery main
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CONFIRMATION" == "$RECOVERY_CONFIRMATION" ]]
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          [[ "$(git rev-parse refs/remotes/origin/main)" == "$GITHUB_SHA" ]]
+
+      - name: Download and verify the immutable tagged artifacts and provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/recover-v0.1.0-artifacts.sh "$RUNNER_TEMP/tagged"
+          mkdir dist sbom
+          cp "$RUNNER_TEMP/tagged/component/curl-provider.wasm" dist/
+          cp "$RUNNER_TEMP/tagged/component/curl-provider.wasm.sha256" dist/
+          cp "$RUNNER_TEMP/tagged/sbom/curl-provider.cdx.json" sbom/
+          (cd dist && shasum -a 256 -c curl-provider.wasm.sha256)
+          [[ "$(shasum -a 256 sbom/curl-provider.cdx.json | awk '{print $1}')" == \
+             "$EXPECTED_SBOM_SHA" ]]
+
+      - name: Discover whether this exact recovery attestation already exists
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/existing-sbom-attestations.json"
+          status=$(curl --silent --show-error --location \
+            --output "$output" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/attestations/sha256:$EXPECTED_SHA?predicate_type=https%3A%2F%2Fcyclonedx.org%2Fbom")
+          case "$status" in
+            404)
+              echo 'exists=false' >>"$GITHUB_OUTPUT"
+              ;;
+            200)
+              [[ "$(jq '.attestations | length' "$output")" == 1 ]]
+              env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+                "$RUNNER_TEMP/tagged/component/curl-provider.wasm" \
+                --repo "$GITHUB_REPOSITORY" \
+                --predicate-type 'https://cyclonedx.org/bom' \
+                --signer-workflow \
+                  "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
+                --source-ref "$GITHUB_REF" \
+                --source-digest "$GITHUB_SHA" >/dev/null
+              echo 'exists=true' >>"$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "error: SBOM attestation discovery returned HTTP $status" >&2
+              cat "$output" >&2
+              exit 1
+              ;;
+          esac
+
+      # actions/attest-sbom v2.4.0 incorrectly requires the optional CycloneDX serialNumber field.
+      # Use its pinned underlying attester directly, preserving the exact tagged SBOM bytes.
+      - name: Attest the exact tagged CycloneDX document
+        if: steps.existing.outputs.exists != 'true'
+        uses: actions/attest@ce27ba3b4a9a139d9a20a4a07d69fabb52f1e5bc # v2.4.0
+        with:
+          subject-path: dist/curl-provider.wasm
+          predicate-type: https://cyclonedx.org/bom
+          predicate-path: sbom/curl-provider.cdx.json
+
+      - name: Verify one exact recovery SBOM attestation and predicate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _attempt in {1..12}; do
+            if gh api \
+              "repos/$GITHUB_REPOSITORY/attestations/sha256:$EXPECTED_SHA?predicate_type=https%3A%2F%2Fcyclonedx.org%2Fbom" \
+              >"$RUNNER_TEMP/sbom-attestations.json" 2>/dev/null; then
+              [[ "$(jq '.attestations | length' "$RUNNER_TEMP/sbom-attestations.json")" == 1 ]]
+              break
+            fi
+            sleep 5
+          done
+          test -s "$RUNNER_TEMP/sbom-attestations.json"
+          env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+            "$RUNNER_TEMP/tagged/component/curl-provider.wasm" \
+            --repo "$GITHUB_REPOSITORY" \
+            --predicate-type 'https://cyclonedx.org/bom' \
+            --signer-workflow \
+              "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
+            --source-ref "$GITHUB_REF" \
+            --source-digest "$GITHUB_SHA" >/dev/null
+          python3 - \
+            "$RUNNER_TEMP/sbom-attestations.json" \
+            "$RUNNER_TEMP/tagged/sbom/curl-provider.cdx.json" \
+            "$EXPECTED_SHA" <<'PY'
+          import base64
+          import json
+          import pathlib
+          import sys
+
+          response = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          expected = json.loads(pathlib.Path(sys.argv[2]).read_text())
+          digest = sys.argv[3]
+          if len(response["attestations"]) != 1:
+              raise SystemExit("expected exactly one CycloneDX attestation")
+          payload = response["attestations"][0]["bundle"]["dsseEnvelope"]["payload"]
+          statement = json.loads(base64.b64decode(payload))
+          if statement.get("predicateType") != "https://cyclonedx.org/bom":
+              raise SystemExit("wrong SBOM predicate type")
+          if statement.get("subject") != [
+              {"name": "curl-provider.wasm", "digest": {"sha256": digest}}
+          ]:
+              raise SystemExit("wrong SBOM subject")
+          if statement.get("predicate") != expected:
+              raise SystemExit("attested SBOM differs from the tagged SBOM artifact")
+          PY
+          git diff --exit-code
+
+  publish:
+    name: Publish only the captured tagged component
+    needs: attest-sbom
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read # Download only the immutable SOURCE_RUN_ID artifacts.
+      contents: write # Own one draft, upload assets, and finalize its captured ID.
+      packages: write # Own one previously absent GHCR package/version.
+    outputs:
+      prior_visibility: ${{ steps.preflight.outputs.prior_visibility }}
+      release_id: ${{ steps.create.outputs.release_id }}
+      wasm_asset_id: ${{ steps.upload.outputs.wasm_asset_id }}
+      checksum_asset_id: ${{ steps.upload.outputs.checksum_asset_id }}
+      manifest_digest: ${{ steps.layout.outputs.manifest_digest }}
+      push_started: ${{ steps.state.outputs.push_started }}
+      package_id: ${{ steps.capture.outputs.package_id }}
+      package_version_id: ${{ steps.capture.outputs.package_version_id }}
+      publicized: ${{ steps.package-public.outputs.publicized }}
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check out the auditable recovery commit without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify confirmation and download only tagged artifacts
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CONFIRMATION" == "$RECOVERY_CONFIRMATION" ]]
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          [[ "$(git rev-parse refs/remotes/origin/main)" == "$GITHUB_SHA" ]]
+          ./scripts/recover-v0.1.0-artifacts.sh "$RUNNER_TEMP/tagged"
+          mkdir dist sbom
+          cp "$RUNNER_TEMP/tagged/component/curl-provider.wasm" dist/
+          cp "$RUNNER_TEMP/tagged/component/curl-provider.wasm.sha256" dist/
+          cp "$RUNNER_TEMP/tagged/sbom/curl-provider.cdx.json" sbom/
+
+      - name: Install exact component and OCI inspection tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RELEASE_RUST" --profile minimal
+          cargo "+$RELEASE_RUST" install wasm-tools \
+            --version "$WASM_TOOLS_VERSION" --locked
+          archive="oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/${archive}" \
+            --output "$RUNNER_TEMP/$archive"
+          echo "$ORAS_LINUX_AMD64_SHA256  $RUNNER_TEMP/$archive" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" oras
+
+      - name: Inspect exact WIT, notices, licenses, and artifact bounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && shasum -a 256 -c curl-provider.wasm.sha256)
+          [[ "$(awk '{print $1}' dist/curl-provider.wasm.sha256)" == "$EXPECTED_SHA" ]]
+          [[ "$(wc -c <dist/curl-provider.wasm | tr -d '[:space:]')" == 270575 ]]
+          [[ "$(shasum -a 256 sbom/curl-provider.cdx.json | awk '{print $1}')" == \
+             "$EXPECTED_SBOM_SHA" ]]
+          test -s LICENSE-MIT
+          test -s LICENSE-APACHE
+          test -s THIRD_PARTY_NOTICES.md
+          printf '%s  %s\n' \
+            '02ba5a92067f53bc8f48e10bf221229c5b7f33f791a031741da5011c32ab37c9' \
+            wit/deps/provider.wit \
+            'd0655d1ceba81fbd810f125cfc8fb2cbd8ad0696d91d34631b6b54f185dbc174' \
+            wit/deps/http.wit | shasum -a 256 -c -
+          wasm-tools validate dist/curl-provider.wasm
+          wasm-tools component wit --json dist/curl-provider.wasm >"$RUNNER_TEMP/wit.json"
+          wasm-tools component wit dist/curl-provider.wasm >"$RUNNER_TEMP/component.wit"
+          jq -e '
+            (.worlds | length) == 1 and
+            (.interfaces | length) == 1 and
+            (.worlds[0].exports | keys | sort) == ["describe", "invoke", "resolve-command"] and
+            (.worlds[0].imports | length) == 1 and
+            .packages[.interfaces[0].package].name == "dekopon:http@1.0.0" and
+            .interfaces[0].name == "client" and
+            (.interfaces[0].functions | keys) == ["send"] and
+            ([.packages[].name] | sort) == ["dekopon:http@1.0.0", "root:component"]
+          ' "$RUNNER_TEMP/wit.json" >/dev/null
+          if grep -Eqi 'wasi:|wasix|wasi_snapshot|wasm-bindgen|js-sys' \
+            "$RUNNER_TEMP/component.wit"; then
+            echo 'error: ambient interface/runtime found in captured component' >&2
+            exit 1
+          fi
+          python3 - THIRD_PARTY_NOTICES.md dist/curl-provider.wasm <<'PY'
+          import pathlib
+          import sys
+          notices = pathlib.Path(sys.argv[1]).read_bytes()
+          component = pathlib.Path(sys.argv[2]).read_bytes()
+          if b"dekopon.third-party-notices" not in component or notices not in component:
+              raise SystemExit("exact self-contained notices are absent from captured component")
+          PY
+
+      - name: Prove exact release/package absence immediately before mutation
+        id: preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo=$(gh api "repos/$GITHUB_REPOSITORY")
+          jq -e '.visibility == "public" and .default_branch == "main"' <<<"$repo" >/dev/null
+          tags=$(git ls-remote --tags origin)
+          [[ "$tags" == \
+             $'69f3dd845c9b9a4aa962328340e266aa4f2ba32d\trefs/tags/v0.1.0\nb2228842c6dddc78b2eb4bfaa72c302b4bf284f2\trefs/tags/v0.1.0^{}' ]]
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq 'add // []' >"$RUNNER_TEMP/releases-before.json"
+          [[ "$(jq length "$RUNNER_TEMP/releases-before.json")" == 0 ]]
+          body="$RUNNER_TEMP/package-before.json"
+          status=$(curl --silent --show-error --location \
+            --output "$body" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "$GITHUB_API_URL/$PACKAGE_ENDPOINT")
+          case "$status" in
+            404) echo 'prior_visibility=absent' >>"$GITHUB_OUTPUT" ;;
+            200)
+              visibility=$(jq -er .visibility "$body")
+              echo "prior_visibility=$visibility" >>"$GITHUB_OUTPUT"
+              echo "error: expected wholly absent package, found $visibility" >&2
+              exit 1
+              ;;
+            *)
+              echo "error: package absence check returned HTTP $status" >&2
+              cat "$body" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Create and capture one exact draft release
+        id: create
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
+            -f tag_name="$SOURCE_TAG" \
+            -f target_commitish="$SOURCE_SHA" \
+            -f name="$SOURCE_TAG" \
+            -F draft=true \
+            -F prerelease=false \
+            -F generate_release_notes=true >"$RUNNER_TEMP/created-release.json"
+          release_id=$(jq -er --arg tag "$SOURCE_TAG" '
+            select(.tag_name == $tag and .draft == true and .prerelease == false) | .id
+          ' "$RUNNER_TEMP/created-release.json")
+          [[ "$release_id" =~ ^[0-9]+$ ]]
+          echo "release_id=$release_id" >>"$GITHUB_OUTPUT"
+
+      - name: Upload exact assets and capture immutable asset IDs
+        id: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.create.outputs.release_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          upload_asset() {
+            local name=$1
+            local output=$2
+            curl --fail --silent --show-error --location \
+              --request POST \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              --header 'Content-Type: application/octet-stream' \
+              --data-binary "@dist/$name" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$name" \
+              >"$output"
+          }
+          [[ "$RELEASE_ID" =~ ^[0-9]+$ ]]
+          upload_asset curl-provider.wasm "$RUNNER_TEMP/wasm-asset.json"
+          upload_asset curl-provider.wasm.sha256 "$RUNNER_TEMP/checksum-asset.json"
+          wasm_asset_id=$(jq -er 'select(.name == "curl-provider.wasm") | .id' \
+            "$RUNNER_TEMP/wasm-asset.json")
+          checksum_asset_id=$(jq -er 'select(.name == "curl-provider.wasm.sha256") | .id' \
+            "$RUNNER_TEMP/checksum-asset.json")
+          [[ "$wasm_asset_id" =~ ^[0-9]+$ ]]
+          [[ "$checksum_asset_id" =~ ^[0-9]+$ ]]
+          echo "wasm_asset_id=$wasm_asset_id" >>"$GITHUB_OUTPUT"
+          echo "checksum_asset_id=$checksum_asset_id" >>"$GITHUB_OUTPUT"
+
+      - name: Verify the owned draft and re-downloaded bytes by immutable IDs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.create.outputs.release_id }}
+          WASM_ASSET_ID: ${{ steps.upload.outputs.wasm_asset_id }}
+          CHECKSUM_ASSET_ID: ${{ steps.upload.outputs.checksum_asset_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")
+          jq -e \
+            --arg tag "$SOURCE_TAG" \
+            --argjson id "$RELEASE_ID" \
+            --argjson wasm_id "$WASM_ASSET_ID" \
+            --argjson checksum_id "$CHECKSUM_ASSET_ID" '
+              .id == $id and .tag_name == $tag and .draft == true and .prerelease == false and
+              ([.assets[] | {name, id}] | sort_by(.name)) ==
+                ([
+                  {name: "curl-provider.wasm", id: $wasm_id},
+                  {name: "curl-provider.wasm.sha256", id: $checksum_id}
+                ] | sort_by(.name))
+            ' <<<"$release" >/dev/null
+          mkdir "$RUNNER_TEMP/draft-assets"
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$WASM_ASSET_ID" \
+            >"$RUNNER_TEMP/draft-assets/curl-provider.wasm"
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$CHECKSUM_ASSET_ID" \
+            >"$RUNNER_TEMP/draft-assets/curl-provider.wasm.sha256"
+          (cd "$RUNNER_TEMP/draft-assets" && shasum -a 256 -c curl-provider.wasm.sha256)
+          cmp dist/curl-provider.wasm "$RUNNER_TEMP/draft-assets/curl-provider.wasm"
+          cmp dist/curl-provider.wasm.sha256 \
+            "$RUNNER_TEMP/draft-assets/curl-provider.wasm.sha256"
+
+      - name: Authenticate exact ORAS client to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | "$RUNNER_TEMP/oras" login ghcr.io \
+            --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and capture one local OCI manifest from tagged bytes
+        id: layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          layout="$RUNNER_TEMP/oci-layout"
+          (
+            cd dist
+            "$RUNNER_TEMP/oras" push --oci-layout "$layout:0.1.0" \
+              --artifact-type application/vnd.dekopon.provider.v1+wasm \
+              --annotation "org.opencontainers.image.revision=$SOURCE_SHA" \
+              --annotation "dev.dekopon.release-run=recovery.$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT" \
+              curl-provider.wasm:application/wasm
+          )
+          digest=$("$RUNNER_TEMP/oras" resolve --oci-layout "$layout:0.1.0")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          "$RUNNER_TEMP/oras" manifest fetch --oci-layout "$layout@$digest" \
+            >"$RUNNER_TEMP/local-manifest.json"
+          jq -e --arg layer "sha256:$EXPECTED_SHA" --arg revision "$SOURCE_SHA" \
+            --arg run "recovery.$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT" '
+              (.layers | length) == 1 and
+              .layers[0].digest == $layer and
+              .layers[0].mediaType == "application/wasm" and
+              .layers[0].annotations["org.opencontainers.image.title"] == "curl-provider.wasm" and
+              .annotations["org.opencontainers.image.revision"] == $revision and
+              .annotations["dev.dekopon.release-run"] == $run
+            ' "$RUNNER_TEMP/local-manifest.json" >/dev/null
+          echo "manifest_digest=$digest" >>"$GITHUB_OUTPUT"
+
+      - name: Record immutable package ownership before the remote copy
+        id: state
+        run: echo 'push_started=true' >>"$GITHUB_OUTPUT"
+
+      - name: Copy only the captured manifest to the absent package
+        env:
+          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/oras" cp --from-oci-layout \
+            "$RUNNER_TEMP/oci-layout@$MANIFEST_DIGEST" "$OCI_REPOSITORY:0.1.0"
+          [[ "$("$RUNNER_TEMP/oras" resolve "$OCI_REPOSITORY:0.1.0")" == \
+             "$MANIFEST_DIGEST" ]]
+
+      - name: Capture exact private package and version IDs
+        id: capture
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _attempt in {1..12}; do
+            if package=$(gh api "$PACKAGE_ENDPOINT" 2>/dev/null) && \
+               gh api --paginate --slurp "$PACKAGE_ENDPOINT/versions?per_page=100" \
+                 | jq 'add // []' >"$RUNNER_TEMP/versions.json"; then
+              package_id=$(jq -er 'select(.visibility == "private") | .id' <<<"$package")
+              count=$(jq length "$RUNNER_TEMP/versions.json")
+              version_id=$(jq -r --arg digest "$MANIFEST_DIGEST" '
+                .[] | select(.name == $digest and .metadata.container.tags == ["0.1.0"]) | .id
+              ' "$RUNNER_TEMP/versions.json")
+              if [[ "$package_id" =~ ^[0-9]+$ && "$count" == 1 && \
+                    "$version_id" =~ ^[0-9]+$ ]]; then
+                echo "package_id=$package_id" >>"$GITHUB_OUTPUT"
+                echo "package_version_id=$version_id" >>"$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo 'error: exact private package/version did not become observable' >&2
+          exit 1
+
+      - name: Verify private digest, layer bytes, basename, and exact tag set
+        env:
+          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$("$RUNNER_TEMP/oras" resolve "$OCI_REPOSITORY:0.1.0")" == \
+             "$MANIFEST_DIGEST" ]]
+          "$RUNNER_TEMP/oras" manifest fetch "$OCI_REPOSITORY@$MANIFEST_DIGEST" \
+            >"$RUNNER_TEMP/remote-manifest.json"
+          cmp "$RUNNER_TEMP/local-manifest.json" "$RUNNER_TEMP/remote-manifest.json"
+          jq -e --arg digest "sha256:$EXPECTED_SHA" '
+            (.layers | length) == 1 and
+            .layers[0].digest == $digest and
+            .layers[0].mediaType == "application/wasm" and
+            .layers[0].annotations["org.opencontainers.image.title"] == "curl-provider.wasm"
+          ' "$RUNNER_TEMP/remote-manifest.json" >/dev/null
+          mkdir "$RUNNER_TEMP/private-pull"
+          (cd "$RUNNER_TEMP/private-pull" && \
+            "$RUNNER_TEMP/oras" pull "$OCI_REPOSITORY@$MANIFEST_DIGEST")
+          [[ "$(find "$RUNNER_TEMP/private-pull" -maxdepth 1 -type f | wc -l)" == 1 ]]
+          cmp dist/curl-provider.wasm "$RUNNER_TEMP/private-pull/curl-provider.wasm"
+          [[ "$("$RUNNER_TEMP/oras" repo tags "$OCI_REPOSITORY" | sort)" == 0.1.0 ]]
+
+      - name: Make the validated one-version package public last
+        id: package-public
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
+          PACKAGE_ID: ${{ steps.capture.outputs.package_id }}
+          PACKAGE_VERSION_ID: ${{ steps.capture.outputs.package_version_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package=$(gh api "$PACKAGE_ENDPOINT")
+          gh api --paginate --slurp "$PACKAGE_ENDPOINT/versions?per_page=100" \
+            | jq 'add // []' >"$RUNNER_TEMP/versions-before-public.json"
+          jq -e --argjson id "$PACKAGE_ID" \
+            '.id == $id and .visibility == "private"' <<<"$package" >/dev/null
+          jq -e --argjson id "$PACKAGE_VERSION_ID" --arg digest "$MANIFEST_DIGEST" '
+            length == 1 and .[0].id == $id and .[0].name == $digest and
+            .[0].metadata.container.tags == ["0.1.0"]
+          ' "$RUNNER_TEMP/versions-before-public.json" >/dev/null
+          [[ "$("$RUNNER_TEMP/oras" resolve "$OCI_REPOSITORY:0.1.0")" == \
+             "$MANIFEST_DIGEST" ]]
+          gh api --method PATCH "$PACKAGE_ENDPOINT/visibility" \
+            -f visibility=public >/dev/null
+          [[ "$(gh api "$PACKAGE_ENDPOINT" --jq .visibility)" == public ]]
+          echo 'publicized=true' >>"$GITHUB_OUTPUT"
+
+      - name: Reverify all mutable and immutable state before finalization
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.create.outputs.release_id }}
+          WASM_ASSET_ID: ${{ steps.upload.outputs.wasm_asset_id }}
+          CHECKSUM_ASSET_ID: ${{ steps.upload.outputs.checksum_asset_id }}
+          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
+          PACKAGE_ID: ${{ steps.capture.outputs.package_id }}
+          PACKAGE_VERSION_ID: ${{ steps.capture.outputs.package_version_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/$SOURCE_TAG:refs/tags/$SOURCE_TAG"
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          [[ "$(git cat-file -t "refs/tags/$SOURCE_TAG")" == tag ]]
+          [[ "$(git rev-parse "refs/tags/$SOURCE_TAG")" == \
+             69f3dd845c9b9a4aa962328340e266aa4f2ba32d ]]
+          [[ "$(git rev-parse "refs/tags/$SOURCE_TAG^{}")" == "$SOURCE_SHA" ]]
+          [[ "$(git rev-parse refs/remotes/origin/main)" == "$GITHUB_SHA" ]]
+
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")
+          jq -e \
+            --arg tag "$SOURCE_TAG" \
+            --argjson id "$RELEASE_ID" \
+            --argjson wasm_id "$WASM_ASSET_ID" \
+            --argjson checksum_id "$CHECKSUM_ASSET_ID" '
+              .id == $id and .tag_name == $tag and .draft == true and .prerelease == false and
+              ([.assets[] | {name, id}] | sort_by(.name)) ==
+                ([
+                  {name: "curl-provider.wasm", id: $wasm_id},
+                  {name: "curl-provider.wasm.sha256", id: $checksum_id}
+                ] | sort_by(.name))
+            ' <<<"$release" >/dev/null
+          rm -rf "$RUNNER_TEMP/prepublish" && mkdir "$RUNNER_TEMP/prepublish"
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$WASM_ASSET_ID" \
+            >"$RUNNER_TEMP/prepublish/curl-provider.wasm"
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$CHECKSUM_ASSET_ID" \
+            >"$RUNNER_TEMP/prepublish/curl-provider.wasm.sha256"
+          (cd "$RUNNER_TEMP/prepublish" && shasum -a 256 -c curl-provider.wasm.sha256)
+          cmp dist/curl-provider.wasm "$RUNNER_TEMP/prepublish/curl-provider.wasm"
+          cmp dist/curl-provider.wasm.sha256 \
+            "$RUNNER_TEMP/prepublish/curl-provider.wasm.sha256"
+
+          env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+            "$RUNNER_TEMP/prepublish/curl-provider.wasm" \
+            --repo "$GITHUB_REPOSITORY" \
+            --predicate-type 'https://slsa.dev/provenance/v1' \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-ref "refs/tags/$SOURCE_TAG" \
+            --source-digest "$SOURCE_SHA" >/dev/null
+          env -u GH_TOKEN -u GITHUB_TOKEN gh attestation verify \
+            "$RUNNER_TEMP/prepublish/curl-provider.wasm" \
+            --repo "$GITHUB_REPOSITORY" \
+            --predicate-type 'https://cyclonedx.org/bom' \
+            --signer-workflow \
+              "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
+            --source-ref "$GITHUB_REF" \
+            --source-digest "$GITHUB_SHA" >/dev/null
+
+          printf '{"auths":{}}\n' >"$RUNNER_TEMP/anonymous-auth.json"
+          anonymous=(--registry-config "$RUNNER_TEMP/anonymous-auth.json")
+          [[ "$("$RUNNER_TEMP/oras" resolve "${anonymous[@]}" \
+              "$OCI_REPOSITORY:0.1.0")" == "$MANIFEST_DIGEST" ]]
+          "$RUNNER_TEMP/oras" manifest fetch "${anonymous[@]}" \
+            "$OCI_REPOSITORY@$MANIFEST_DIGEST" >"$RUNNER_TEMP/public-manifest.json"
+          jq -e --arg digest "sha256:$EXPECTED_SHA" '
+            (.layers | length) == 1 and
+            .layers[0].digest == $digest and
+            .layers[0].mediaType == "application/wasm" and
+            .layers[0].annotations["org.opencontainers.image.title"] == "curl-provider.wasm"
+          ' "$RUNNER_TEMP/public-manifest.json" >/dev/null
+          mkdir "$RUNNER_TEMP/public-pull"
+          (cd "$RUNNER_TEMP/public-pull" && \
+            "$RUNNER_TEMP/oras" pull "${anonymous[@]}" \
+              "$OCI_REPOSITORY@$MANIFEST_DIGEST")
+          [[ "$(find "$RUNNER_TEMP/public-pull" -maxdepth 1 -type f | wc -l)" == 1 ]]
+          cmp dist/curl-provider.wasm "$RUNNER_TEMP/public-pull/curl-provider.wasm"
+          [[ "$("$RUNNER_TEMP/oras" repo tags "${anonymous[@]}" \
+              "$OCI_REPOSITORY" | sort)" == 0.1.0 ]]
+
+          package=$(gh api "$PACKAGE_ENDPOINT")
+          gh api --paginate --slurp "$PACKAGE_ENDPOINT/versions?per_page=100" \
+            | jq 'add // []' >"$RUNNER_TEMP/versions-before-finalize.json"
+          jq -e --argjson id "$PACKAGE_ID" \
+            '.id == $id and .visibility == "public"' <<<"$package" >/dev/null
+          jq -e --argjson id "$PACKAGE_VERSION_ID" --arg digest "$MANIFEST_DIGEST" '
+            length == 1 and .[0].id == $id and .[0].name == $digest and
+            .[0].metadata.container.tags == ["0.1.0"]
+          ' "$RUNNER_TEMP/versions-before-finalize.json" >/dev/null
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq 'add // []' >"$RUNNER_TEMP/releases-before-finalize.json"
+          jq -e --argjson id "$RELEASE_ID" \
+            'length == 1 and .[0].id == $id and .[0].draft == true' \
+            "$RUNNER_TEMP/releases-before-finalize.json" >/dev/null
+
+      - name: Finalize only the captured release ID with make_latest false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.create.outputs.release_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false \
+            -F prerelease=false \
+            -f make_latest=false >"$RUNNER_TEMP/published.json"
+          jq -e --arg tag "$SOURCE_TAG" --argjson id "$RELEASE_ID" '
+            .id == $id and .tag_name == $tag and .draft == false and .prerelease == false
+          ' "$RUNNER_TEMP/published.json" >/dev/null
+
+      - name: Verify release, attestations, and OCI anonymously after publication
+        env:
+          RELEASE_ID: ${{ steps.create.outputs.release_id }}
+          WASM_ASSET_ID: ${{ steps.upload.outputs.wasm_asset_id }}
+          CHECKSUM_ASSET_ID: ${{ steps.upload.outputs.checksum_asset_id }}
+          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GH_TOKEN GITHUB_TOKEN
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$SOURCE_TAG"
+          mkdir "$RUNNER_TEMP/anonymous-release"
+          curl --fail --silent --show-error --location \
+            "$base/curl-provider.wasm" \
+            -o "$RUNNER_TEMP/anonymous-release/curl-provider.wasm"
+          curl --fail --silent --show-error --location \
+            "$base/curl-provider.wasm.sha256" \
+            -o "$RUNNER_TEMP/anonymous-release/curl-provider.wasm.sha256"
+          (cd "$RUNNER_TEMP/anonymous-release" && \
+            shasum -a 256 -c curl-provider.wasm.sha256)
+          cmp dist/curl-provider.wasm "$RUNNER_TEMP/anonymous-release/curl-provider.wasm"
+          release=$(curl --fail --silent --show-error \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$SOURCE_TAG")
+          jq -e \
+            --argjson id "$RELEASE_ID" \
+            --argjson wasm_id "$WASM_ASSET_ID" \
+            --argjson checksum_id "$CHECKSUM_ASSET_ID" '
+              .id == $id and .draft == false and .prerelease == false and
+              ([.assets[] | {name, id}] | sort_by(.name)) ==
+                ([
+                  {name: "curl-provider.wasm", id: $wasm_id},
+                  {name: "curl-provider.wasm.sha256", id: $checksum_id}
+                ] | sort_by(.name))
+            ' <<<"$release" >/dev/null
+          gh attestation verify "$RUNNER_TEMP/anonymous-release/curl-provider.wasm" \
+            --repo "$GITHUB_REPOSITORY" \
+            --predicate-type 'https://slsa.dev/provenance/v1' \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-ref "refs/tags/$SOURCE_TAG" \
+            --source-digest "$SOURCE_SHA" >/dev/null
+          gh attestation verify "$RUNNER_TEMP/anonymous-release/curl-provider.wasm" \
+            --repo "$GITHUB_REPOSITORY" \
+            --predicate-type 'https://cyclonedx.org/bom' \
+            --signer-workflow \
+              "$GITHUB_REPOSITORY/.github/workflows/recover-v0.1.0.yml" \
+            --source-ref "$GITHUB_REF" \
+            --source-digest "$GITHUB_SHA" >/dev/null
+          printf '{"auths":{}}\n' >"$RUNNER_TEMP/final-anonymous-auth.json"
+          anonymous=(--registry-config "$RUNNER_TEMP/final-anonymous-auth.json")
+          [[ "$("$RUNNER_TEMP/oras" resolve "${anonymous[@]}" \
+              "$OCI_REPOSITORY:0.1.0")" == "$MANIFEST_DIGEST" ]]
+          rm -rf "$RUNNER_TEMP/final-oci" && mkdir "$RUNNER_TEMP/final-oci"
+          (cd "$RUNNER_TEMP/final-oci" && \
+            "$RUNNER_TEMP/oras" pull "${anonymous[@]}" \
+              "$OCI_REPOSITORY@$MANIFEST_DIGEST")
+          [[ "$(find "$RUNNER_TEMP/final-oci" -maxdepth 1 -type f | wc -l)" == 1 ]]
+          cmp "$RUNNER_TEMP/anonymous-release/curl-provider.wasm" \
+            "$RUNNER_TEMP/final-oci/curl-provider.wasm"
+          [[ "$("$RUNNER_TEMP/oras" repo tags "${anonymous[@]}" \
+              "$OCI_REPOSITORY" | sort)" == 0.1.0 ]]
+
+  cleanup:
+    name: Roll back only recovery-owned release/package state on failure
+    needs: [attest-sbom, publish]
+    if: >-
+      ${{ always() &&
+          (contains(needs.*.result, 'failure') ||
+           contains(needs.*.result, 'cancelled')) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # Delete only the release ID captured by this recovery run.
+      packages: write # Re-private/delete only the captured package version and package.
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: v0.1.0
+      RELEASE_ID: ${{ needs.publish.outputs.release_id }}
+      PRIOR_VISIBILITY: ${{ needs.publish.outputs.prior_visibility }}
+      MANIFEST_DIGEST: ${{ needs.publish.outputs.manifest_digest }}
+      PUSH_STARTED: ${{ needs.publish.outputs.push_started }}
+      PACKAGE_ID: ${{ needs.publish.outputs.package_id }}
+      PACKAGE_VERSION_ID: ${{ needs.publish.outputs.package_version_id }}
+    steps:
+      - name: Restore prior absence by immutable IDs and surface cleanup errors
+        shell: bash
+        run: |
+          set -uo pipefail
+          failures=0
+          headers=(
+            --header "Authorization: Bearer $GH_TOKEN"
+            --header 'Accept: application/vnd.github+json'
+            --header 'X-GitHub-Api-Version: 2022-11-28'
+          )
+          request() {
+            local method=$1 endpoint=$2 output=$3 data=${4-} status
+            local args=(--silent --show-error --location --request "$method" \
+              "${headers[@]}" --output "$output" --write-out '%{http_code}')
+            if [[ -n "$data" ]]; then
+              args+=(--header 'Content-Type: application/json' --data "$data")
+            fi
+            if ! status=$(curl "${args[@]}" "$GITHUB_API_URL/$endpoint"); then
+              echo "error: cleanup API request failed: $method $endpoint" >&2
+              failures=$((failures + 1))
+              printf '000'
+              return
+            fi
+            printf '%s' "$status"
+          }
+
+          package_present=false
+          if [[ "$PUSH_STARTED" == true || -n "$PACKAGE_VERSION_ID" ]]; then
+            if [[ "$PRIOR_VISIBILITY" != absent ]]; then
+              echo 'error: refusing package cleanup without captured prior absence' >&2
+              failures=$((failures + 1))
+            elif [[ ! "$MANIFEST_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo 'error: refusing package cleanup without captured manifest digest' >&2
+              failures=$((failures + 1))
+            else
+              status=$(request GET "$PACKAGE_ENDPOINT" "$RUNNER_TEMP/package.json")
+              case "$status" in
+                200)
+                  package_present=true
+                  current_id=$(jq -er .id "$RUNNER_TEMP/package.json") || {
+                    echo 'error: could not read current package ID' >&2
+                    failures=$((failures + 1))
+                  }
+                  if [[ -n "$PACKAGE_ID" && "$current_id" != "$PACKAGE_ID" ]]; then
+                    echo 'error: current package differs from captured package ID' >&2
+                    failures=$((failures + 1))
+                    package_present=false
+                  else
+                    status=$(request PATCH "$PACKAGE_ENDPOINT/visibility" \
+                      "$RUNNER_TEMP/package-private.json" '{"visibility":"private"}')
+                    if [[ "$status" != 200 && "$status" != 204 ]]; then
+                      echo "error: restoring package privacy returned HTTP $status" >&2
+                      failures=$((failures + 1))
+                    fi
+                  fi
+                  ;;
+                404) ;;
+                *)
+                  echo "error: package cleanup discovery returned HTTP $status" >&2
+                  failures=$((failures + 1))
+                  ;;
+              esac
+            fi
+          fi
+
+          if [[ -n "$RELEASE_ID" ]]; then
+            if [[ ! "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
+              echo 'error: captured release ID is invalid' >&2
+              failures=$((failures + 1))
+            else
+              status=$(request GET "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+                "$RUNNER_TEMP/release.json")
+              case "$status" in
+                200)
+                  if [[ "$(jq -r .tag_name "$RUNNER_TEMP/release.json")" != "$RELEASE_TAG" ]]; then
+                    echo 'error: captured release ID was mutated to another tag' >&2
+                    failures=$((failures + 1))
+                  else
+                    status=$(request DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+                      "$RUNNER_TEMP/release-delete.json")
+                    if [[ "$status" != 204 && "$status" != 404 ]]; then
+                      echo "error: release deletion returned HTTP $status" >&2
+                      failures=$((failures + 1))
+                    fi
+                  fi
+                  ;;
+                404) ;;
+                *)
+                  echo "error: release cleanup discovery returned HTTP $status" >&2
+                  failures=$((failures + 1))
+                  ;;
+              esac
+            fi
+          fi
+
+          if [[ "$package_present" == true ]]; then
+            status=$(request GET "$PACKAGE_ENDPOINT/versions?per_page=100" \
+              "$RUNNER_TEMP/versions.json")
+            if [[ "$status" != 200 ]]; then
+              echo "error: package version discovery returned HTTP $status" >&2
+              failures=$((failures + 1))
+            else
+              owned_id=$PACKAGE_VERSION_ID
+              if [[ -n "$owned_id" ]]; then
+                match=$(jq --argjson id "$owned_id" --arg digest "$MANIFEST_DIGEST" \
+                  '[.[] | select(.id == $id and .name == $digest)] | length' \
+                  "$RUNNER_TEMP/versions.json")
+                if [[ "$match" != 1 ]]; then
+                  echo 'error: package version ID/digest no longer match' >&2
+                  failures=$((failures + 1))
+                  owned_id=
+                fi
+              else
+                matches=$(jq --arg digest "$MANIFEST_DIGEST" \
+                  '[.[] | select(.name == $digest)]' "$RUNNER_TEMP/versions.json")
+                if [[ "$(jq length <<<"$matches")" == 1 ]]; then
+                  owned_id=$(jq -r '.[0].id' <<<"$matches")
+                elif [[ "$(jq length <<<"$matches")" != 0 ]]; then
+                  echo 'error: digest maps to multiple package versions' >&2
+                  failures=$((failures + 1))
+                fi
+              fi
+              if [[ -n "$owned_id" ]]; then
+                status=$(request DELETE "$PACKAGE_ENDPOINT/versions/$owned_id" \
+                  "$RUNNER_TEMP/version-delete.json")
+                if [[ "$status" != 204 && "$status" != 404 ]]; then
+                  echo "error: version deletion returned HTTP $status" >&2
+                  failures=$((failures + 1))
+                fi
+              fi
+            fi
+
+            restored=false
+            for _attempt in {1..6}; do
+              status=$(request GET "$PACKAGE_ENDPOINT" "$RUNNER_TEMP/package-after.json")
+              case "$status" in
+                404) restored=true; break ;;
+                200)
+                  status=$(request GET "$PACKAGE_ENDPOINT/versions?per_page=100" \
+                    "$RUNNER_TEMP/versions-after.json")
+                  if [[ "$status" != 200 ]]; then
+                    failures=$((failures + 1))
+                    break
+                  fi
+                  non_owned=$(jq --arg digest "$MANIFEST_DIGEST" \
+                    '[.[] | select(.name != $digest)] | length' \
+                    "$RUNNER_TEMP/versions-after.json")
+                  remaining=$(jq length "$RUNNER_TEMP/versions-after.json")
+                  if [[ "$non_owned" != 0 ]]; then
+                    echo 'error: non-owned package versions remain; package left private' >&2
+                    failures=$((failures + 1))
+                    break
+                  fi
+                  if [[ "$remaining" == 0 ]]; then
+                    status=$(request DELETE "$PACKAGE_ENDPOINT" \
+                      "$RUNNER_TEMP/package-delete.json")
+                    if [[ "$status" == 404 ]]; then
+                      restored=true
+                      break
+                    elif [[ "$status" != 204 ]]; then
+                      failures=$((failures + 1))
+                      break
+                    fi
+                  fi
+                  sleep 5
+                  ;;
+                *) failures=$((failures + 1)); break ;;
+              esac
+            done
+            if [[ "$restored" != true ]]; then
+              echo 'error: initially absent package was not restored to absence' >&2
+              failures=$((failures + 1))
+            fi
+          fi
+
+          if ((failures != 0)); then
+            echo "error: rollback completed with $failures failure(s)" >&2
+            exit 1
+          fi
+          echo 'rollback verified: recovery-owned release/package state is absent'

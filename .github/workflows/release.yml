@@ -216,11 +216,14 @@ jobs:
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: dist/curl-provider.wasm
-      - name: Attest CycloneDX SBOM
-        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+      # attest-sbom v2.4.0 rejects valid deterministic CycloneDX documents that omit the optional
+      # serialNumber. Its pinned underlying attester accepts the exact document as the predicate.
+      - name: Attest exact CycloneDX SBOM predicate
+        uses: actions/attest@ce27ba3b4a9a139d9a20a4a07d69fabb52f1e5bc # v2.4.0
         with:
           subject-path: dist/curl-provider.wasm
-          sbom-path: sbom/curl-provider.cdx.json
+          predicate-type: https://cyclonedx.org/bom
+          predicate-path: sbom/curl-provider.cdx.json
 
   draft:
     name: Create one owned draft release
