@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  MSRV: "1.89.0"
+  RELEASE_RUST: "1.97.0"
+  WASM_TOOLS_VERSION: "1.236.1"
+  WASMTIME_VERSION: "48.0.0"
+  CARGO_DENY_VERSION: "0.20.2"
+  CARGO_CYCLONEDX_VERSION: "0.5.9"
+
+jobs:
+  source:
+    name: MSRV, source, dependency, and license gates
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install exact MSRV
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$MSRV" --profile minimal \
+            --component clippy --component rustfmt
+          rustup target add wasm32-unknown-unknown --toolchain "$MSRV"
+
+      - name: Format, lint, unit test, and wasm-check on MSRV
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo "+$MSRV" fmt --all -- --check
+          cargo "+$MSRV" clippy --locked --all-targets -- -D warnings
+          cargo "+$MSRV" test --locked --lib
+          cargo "+$MSRV" check --locked --target wasm32-unknown-unknown
+
+      - name: Reject tracked artifacts and unexpected shipped dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git ls-files '*.wasm' '*.wasm.sha256' 'dist/**' 'target/**')"
+          ./scripts/dependency_inventory.py check-sources
+          ./scripts/dependency_inventory.py inventory --output "$RUNNER_TEMP/dependencies.txt"
+          ./scripts/dependency_inventory.py notices --output "$RUNNER_TEMP/notices.md"
+          cmp security/wasm-dependencies.txt "$RUNNER_TEMP/dependencies.txt"
+          cmp THIRD_PARTY_NOTICES.md "$RUNNER_TEMP/notices.md"
+          if grep -Eq 'source = "git\+|path\+' Cargo.lock; then
+            echo "error: lockfile contains a Git or path source" >&2
+            exit 1
+          fi
+          python3 -m py_compile scripts/dependency_inventory.py
+          shellcheck build.sh scripts/*.sh
+
+      - name: Install and run pinned cargo-deny
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo "+$MSRV" install cargo-deny --version "$CARGO_DENY_VERSION" --locked
+          cargo deny --locked check advisories licenses bans sources
+
+      - name: Generate and compare deterministic pinned SBOMs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo "+$MSRV" install cargo-cyclonedx \
+            --version "$CARGO_CYCLONEDX_VERSION" --locked
+          ./scripts/generate-sbom.sh "$RUNNER_TEMP/first.cdx.json"
+          ./scripts/generate-sbom.sh "$RUNNER_TEMP/second.cdx.json"
+          cmp "$RUNNER_TEMP/first.cdx.json" "$RUNNER_TEMP/second.cdx.json"
+          jq -e '
+            .bomFormat == "CycloneDX" and
+            .specVersion == "1.5" and
+            .metadata.component.name == "dekopon-curl-provider" and
+            (.components | length) == 49
+          ' "$RUNNER_TEMP/first.cdx.json" >/dev/null
+          if grep -aF "$GITHUB_WORKSPACE" "$RUNNER_TEMP/first.cdx.json"; then
+            echo "error: SBOM retained the checkout path" >&2
+            exit 1
+          fi
+
+      - name: Prove checks generated no tracked diff
+        run: git diff --exit-code
+
+  component:
+    name: Component, host, resources, and reproducibility
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install exact release and host tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RELEASE_RUST" --profile minimal
+          rustup target add wasm32-unknown-unknown --toolchain "$RELEASE_RUST"
+          cargo "+$RELEASE_RUST" install wasm-tools \
+            --version "$WASM_TOOLS_VERSION" --locked
+          cargo "+$RELEASE_RUST" install wasmtime-cli \
+            --version "$WASMTIME_VERSION" --locked
+          cargo "+$RELEASE_RUST" install dekopon-run --version 0.11.1 --locked
+          cargo "+$RELEASE_RUST" install cargo-cyclonedx \
+            --version "$CARGO_CYCLONEDX_VERSION" --locked
+
+      - name: Build and inspect release component
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build.sh
+          ./scripts/verify-component.sh
+          test "$(wc -c < curl-provider.wasm)" -le $((512 * 1024))
+
+      - name: Run constrained broker-host, Cedar, and resource tests
+        run: cargo "+$RELEASE_RUST" test --locked --test broker_host -- --nocapture
+
+      - name: Prove every direct host fails closed
+        run: ./scripts/test-direct-refusal.sh
+
+      - name: Generate release SBOM
+        run: ./scripts/generate-sbom.sh dist/curl-provider.cdx.json
+
+      - name: Rebuild two independent clean git archives
+        run: ./scripts/check-reproducible.sh
+
+      - name: Prove generated Wasm remains untracked
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git ls-files '*.wasm' '*.wasm.sha256')"
+          git diff --exit-code
+
+      - name: Upload verified CI artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: curl-provider-ci
+          path: |
+            curl-provider.wasm
+            curl-provider.wasm.sha256
+            dist/curl-provider.cdx.json
+          if-no-files-found: error
+          retention-days: 7

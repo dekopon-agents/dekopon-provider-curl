@@ -1,0 +1,22 @@
+# Supported v0.1.0 constraint profile. Replace the authority with an exact operator-selected
+# HTTPS authority. A separate Cedar statement must authorize each caller.
+constraintSets:
+  curl.get:
+    provider: curl
+    effect: read-only
+    risk: Medium
+    idempotency: idempotent
+    constraints:
+      timeoutMs: 10000
+      maxOutputBytes: 524288
+      http:
+        allowedHosts:
+          - api.example.com
+        allowedMethods:
+          - GET
+        maxRequests: 1
+        maxRequestBytes: 32768
+        maxResponseBytes: 262144
+        allowPlaintextLoopback: false
+
+# Deliberately absent: credential and credentialByAgent. Generic credentialed GET is unsupported.

@@ -1,0 +1,11 @@
+/target/
+/dist/
+*.wasm
+*.wasm.sha256
+*.cdx.json
+*.profraw
+*.pyc
+__pycache__/
+/deps.tree
+/core-imports.txt
+/component.wit

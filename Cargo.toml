@@ -1,0 +1,47 @@
+[workspace]
+
+[package]
+name = "dekopon-curl-provider"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89.0"
+license = "MIT OR Apache-2.0"
+description = "Bounded unauthenticated HTTP GET capability for Dekopon"
+repository = "https://github.com/dekopon-agents/dekopon-provider-curl"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+base64 = "=0.22.1"
+dekopon-provider-http = "=0.11.1"
+dekopon-provider-sdk = "=0.11.1"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+wit-bindgen = { version = "=0.44.0", default-features = false, features = ["macros", "realloc"] }
+
+[dev-dependencies]
+dekopon-broker = "=0.11.1"
+dekopon-broker-host = "=0.11.1"
+dekopon-capability = "=0.11.1"
+dekopon-core = "=0.11.1"
+tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "time"] }
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "z"
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"

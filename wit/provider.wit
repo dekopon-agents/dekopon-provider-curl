@@ -1,0 +1,6 @@
+package dekopon:curl@0.1.0;
+
+world provider {
+    include dekopon:provider/provider-commands@0.2.0;
+    import dekopon:http/client@1.0.0;
+}
