@@ -57,3 +57,11 @@ fresh Actions runner without `GH_TOKEN`, even for a public repository. Its no-op
 confirmed absence. The verifier now anonymously downloads the public Sigstore bundle with `curl`
 and passes that local bundle to `gh` under a clean config directory with both token variables unset;
 this makes the anonymous boundary executable rather than relying on ambient CLI login state.
+
+Recovery run
+[`32777291858`](https://github.com/dekopon-agents/dekopon-provider-curl/actions/runs/32777291858)
+then created and exactly verified the CycloneDX attestation at recovery commit
+`7d3c700e534e4bc6dd73f8cdf1bfc26c351fcedc`, but draft creation was denied before any release
+existed because generated release notes additionally require `pull-requests: read`. Its no-op
+rollback confirmed package/release absence. Subsequent recovery pins and reuses that one immutable
+SBOM attestation, grants only the missing read permission, and does not create a duplicate.

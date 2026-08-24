@@ -231,6 +231,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write # Draft discovery, creation, asset upload, and deletion.
+      pull-requests: read # Required only by generate_release_notes during draft creation.
     outputs:
       release_id: ${{ steps.create.outputs.release_id }}
       wasm_asset_id: ${{ steps.upload.outputs.wasm_asset_id }}
