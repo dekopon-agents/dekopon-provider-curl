@@ -80,3 +80,14 @@ next control commit pins the exact residual draft ID `376021870`, marker, creati
 bot author, empty asset set, and successful no-package cleanup. It refuses every other release,
 continues that existing transaction rather than creating/reusing an unowned draft, and fixes the
 normal tag workflow with a bounded post-create visibility poll.
+
+Run
+[`32785333687`](https://github.com/dekopon-agents/dekopon-provider-curl/actions/runs/32785333687)
+consumed that exact draft, uploaded the source-run assets, and published the exact one-layer OCI
+manifest `sha256:04677284df16b531bb32e079cb4dbf006510e74b7ced05e7fdb453ec250d81d5`.
+GHCR made the package public immediately for this public repository, while the workflow expected a
+private initial state; capture failed and cleanup deleted the draft but surfaced its inability to
+remove the already-public package. The finalizer therefore pins the originating run/job/commit,
+manifest digest and run annotation; verifies the sole tag, layer, and bytes anonymously; reads the
+single public package/version IDs; creates a fresh owned draft; and has only `packages: read`. Its
+cleanup can delete its release ID but intentionally cannot mutate the proven residual OCI.

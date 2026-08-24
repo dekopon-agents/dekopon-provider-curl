@@ -22,12 +22,12 @@ env:
   EXPECTED_SHA: c2167ce14a7aaaec55635091da233745c06e6757c5080a4a635c03ea0e82d9c0
   EXPECTED_SBOM_SHA: e360e3313bfc0f92633eb2323ac217a780c1502f0c612b00c9d216437b83f97c
   SBOM_ATTESTATION_SHA: 7d3c700e534e4bc6dd73f8cdf1bfc26c351fcedc
-  DRAFT_SOURCE_RUN_ID: "32783422553"
-  DRAFT_SOURCE_SHA: cea00ad60e96440f98621996772336aff707aae1
-  DRAFT_SOURCE_JOB_ID: "97610307074"
-  DRAFT_CLEANUP_JOB_ID: "97610977708"
-  DRAFT_RELEASE_ID: "376021870"
-  DRAFT_MARKER: provider-curl-recovery:32783422553:1
+  OCI_SOURCE_RUN_ID: "32785333687"
+  OCI_SOURCE_SHA: 97ad281654c78fbdc970be2e970dbd5c39e8d956
+  OCI_SOURCE_JOB_ID: "97616056467"
+  OCI_CLEANUP_JOB_ID: "97616674942"
+  OCI_MANIFEST_DIGEST: sha256:04677284df16b531bb32e079cb4dbf006510e74b7ced05e7fdb453ec250d81d5
+  OCI_RUN_ANNOTATION: recovery.32785333687.1
   RECOVERY_CONFIRMATION: recover-v0.1.0-from-run-32770900739
   RELEASE_RUST: "1.97.0"
   WASM_TOOLS_VERSION: "1.236.1"
@@ -173,18 +173,18 @@ jobs:
     permissions:
       actions: read # Download only the immutable SOURCE_RUN_ID artifacts.
       contents: write # Own one draft, upload assets, and finalize its captured ID.
-      packages: write # Own one previously absent GHCR package/version.
+      packages: read # Inspect only the exact public residual package/version from OCI_SOURCE_RUN_ID.
     outputs:
       prior_visibility: ${{ steps.preflight.outputs.prior_visibility }}
       release_id: ${{ steps.create.outputs.release_id }}
       wasm_asset_id: ${{ steps.upload.outputs.wasm_asset_id }}
       checksum_asset_id: ${{ steps.upload.outputs.checksum_asset_id }}
       marker: ${{ steps.create.outputs.marker }}
-      manifest_digest: ${{ steps.layout.outputs.manifest_digest }}
+      manifest_digest: ${{ steps.preflight.outputs.manifest_digest }}
       push_started: ${{ steps.state.outputs.push_started }}
-      package_id: ${{ steps.capture.outputs.package_id }}
-      package_version_id: ${{ steps.capture.outputs.package_version_id }}
-      publicized: ${{ steps.package-public.outputs.publicized }}
+      package_id: ${{ steps.preflight.outputs.package_id }}
+      package_version_id: ${{ steps.preflight.outputs.package_version_id }}
+      publicized: ${{ steps.preflight.outputs.publicized }}
     env:
       GH_REPO: ${{ github.repository }}
     steps:
@@ -270,7 +270,7 @@ jobs:
               raise SystemExit("exact self-contained notices are absent from captured component")
           PY
 
-      - name: Prove the exact owned residual draft and absent package
+      - name: Prove the exact public residual OCI and absent release
         id: preflight
         env:
           GH_TOKEN: ${{ github.token }}
@@ -283,76 +283,107 @@ jobs:
           [[ "$tags" == \
              $'69f3dd845c9b9a4aa962328340e266aa4f2ba32d\trefs/tags/v0.1.0\nb2228842c6dddc78b2eb4bfaa72c302b4bf284f2\trefs/tags/v0.1.0^{}' ]]
 
-          prior=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DRAFT_SOURCE_RUN_ID")
-          jq -e --arg sha "$DRAFT_SOURCE_SHA" --argjson id "$DRAFT_SOURCE_RUN_ID" '
+          prior=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OCI_SOURCE_RUN_ID")
+          jq -e --arg sha "$OCI_SOURCE_SHA" --argjson id "$OCI_SOURCE_RUN_ID" '
             .id == $id and .workflow_id == 341554571 and
             .path == ".github/workflows/recover-v0.1.0.yml" and
             .event == "workflow_dispatch" and .status == "completed" and
             .conclusion == "failure" and .head_branch == "main" and .head_sha == $sha and
             .run_attempt == 1 and .actor.login == "xrl"
           ' <<<"$prior" >/dev/null
-          jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DRAFT_SOURCE_RUN_ID/jobs?per_page=100")
-          jq -e --argjson publish "$DRAFT_SOURCE_JOB_ID" \
-            --argjson cleanup "$DRAFT_CLEANUP_JOB_ID" '
+          jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OCI_SOURCE_RUN_ID/jobs?per_page=100")
+          jq -e --argjson publish "$OCI_SOURCE_JOB_ID" \
+            --argjson cleanup "$OCI_CLEANUP_JOB_ID" '
             .total_count == 3 and
             ([.jobs[] | {id, name, conclusion}] | sort_by(.id)) == ([
-              {id: 97610206789, name: "Verify the exact already-bound tagged SBOM",
+              {id: 97615984969, name: "Verify the exact already-bound tagged SBOM",
                 conclusion: "success"},
               {id: $publish, name: "Publish only the captured tagged component",
                 conclusion: "failure"},
               {id: $cleanup, name: "Roll back only recovery-owned release/package state on failure",
-                conclusion: "success"}
+                conclusion: "failure"}
             ] | sort_by(.id))
           ' <<<"$jobs" >/dev/null
 
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             | jq 'add // []' >"$RUNNER_TEMP/releases-before.json"
-          jq -e --argjson id "$DRAFT_RELEASE_ID" --arg marker "$DRAFT_MARKER" '
-            length == 1 and .[0].id == $id and .[0].tag_name == "v0.1.0" and
-            .[0].name == "v0.1.0" and .[0].target_commitish == "main" and
-            .[0].draft == true and .[0].prerelease == false and
-            ((.[0].body // "") | startswith($marker)) and
-            (.[0].assets | length) == 0 and
-            .[0].author.login == "github-actions[bot]" and .[0].author.id == 41898282
-          ' "$RUNNER_TEMP/releases-before.json" >/dev/null
+          [[ "$(jq length "$RUNNER_TEMP/releases-before.json")" == 0 ]]
 
-          body="$RUNNER_TEMP/package-before.json"
-          status=$(curl --silent --show-error --location \
-            --output "$body" --write-out '%{http_code}' \
-            --header "Authorization: Bearer $GH_TOKEN" \
-            --header 'Accept: application/vnd.github+json' \
-            --header 'X-GitHub-Api-Version: 2022-11-28' \
-            "$GITHUB_API_URL/$PACKAGE_ENDPOINT")
-          case "$status" in
-            404) echo 'prior_visibility=absent' >>"$GITHUB_OUTPUT" ;;
-            200)
-              visibility=$(jq -er .visibility "$body")
-              echo "prior_visibility=$visibility" >>"$GITHUB_OUTPUT"
-              echo "error: expected wholly absent package, found $visibility" >&2
-              exit 1
-              ;;
-            *)
-              echo "error: package absence check returned HTTP $status" >&2
-              cat "$body" >&2
-              exit 1
-              ;;
-          esac
+          package=$(gh api "$PACKAGE_ENDPOINT")
+          gh api --paginate --slurp "$PACKAGE_ENDPOINT/versions?per_page=100" \
+            | jq 'add // []' >"$RUNNER_TEMP/residual-versions.json"
+          package_id=$(jq -er 'select(.visibility == "public") | .id' <<<"$package")
+          version_id=$(jq -er --arg digest "$OCI_MANIFEST_DIGEST" '
+            if length == 1 and .[0].name == $digest and
+              .[0].metadata.container.tags == ["0.1.0"]
+            then .[0].id else error("residual package version mismatch") end
+          ' "$RUNNER_TEMP/residual-versions.json")
+          [[ "$package_id" =~ ^[0-9]+$ ]]
+          [[ "$version_id" =~ ^[0-9]+$ ]]
 
-      - name: Capture the exact marker-owned residual draft
+          printf '{"auths":{}}\n' >"$RUNNER_TEMP/residual-anonymous-auth.json"
+          anonymous=(--registry-config "$RUNNER_TEMP/residual-anonymous-auth.json")
+          [[ "$("$RUNNER_TEMP/oras" resolve "${anonymous[@]}" \
+              "$OCI_REPOSITORY:0.1.0")" == "$OCI_MANIFEST_DIGEST" ]]
+          "$RUNNER_TEMP/oras" manifest fetch "${anonymous[@]}" \
+            "$OCI_REPOSITORY@$OCI_MANIFEST_DIGEST" >"$RUNNER_TEMP/residual-manifest.json"
+          jq -e --arg layer "sha256:$EXPECTED_SHA" --arg revision "$SOURCE_SHA" \
+            --arg run "$OCI_RUN_ANNOTATION" '
+              .artifactType == "application/vnd.dekopon.provider.v1+wasm" and
+              (.layers | length) == 1 and .layers[0].digest == $layer and
+              .layers[0].mediaType == "application/wasm" and
+              .layers[0].annotations["org.opencontainers.image.title"] == "curl-provider.wasm" and
+              .annotations["org.opencontainers.image.revision"] == $revision and
+              .annotations["dev.dekopon.release-run"] == $run
+            ' "$RUNNER_TEMP/residual-manifest.json" >/dev/null
+          mkdir "$RUNNER_TEMP/residual-pull"
+          (cd "$RUNNER_TEMP/residual-pull" && \
+            "$RUNNER_TEMP/oras" pull "${anonymous[@]}" \
+              "$OCI_REPOSITORY@$OCI_MANIFEST_DIGEST")
+          [[ "$(find "$RUNNER_TEMP/residual-pull" -maxdepth 1 -type f | wc -l)" == 1 ]]
+          cmp dist/curl-provider.wasm "$RUNNER_TEMP/residual-pull/curl-provider.wasm"
+          [[ "$("$RUNNER_TEMP/oras" repo tags "${anonymous[@]}" \
+              "$OCI_REPOSITORY" | sort)" == 0.1.0 ]]
+
+          {
+            echo 'prior_visibility=public-residual'
+            echo "manifest_digest=$OCI_MANIFEST_DIGEST"
+            echo "package_id=$package_id"
+            echo "package_version_id=$version_id"
+            echo 'publicized=true'
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Create and capture a marker-owned draft for the residual OCI
         id: create
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/$DRAFT_RELEASE_ID")
-          jq -e --argjson id "$DRAFT_RELEASE_ID" --arg marker "$DRAFT_MARKER" '
-            .id == $id and .tag_name == "v0.1.0" and .draft == true and
-            .prerelease == false and ((.body // "") | startswith($marker)) and
-            (.assets | length) == 0 and .author.login == "github-actions[bot]"
-          ' <<<"$release" >/dev/null
-          echo "release_id=$DRAFT_RELEASE_ID" >>"$GITHUB_OUTPUT"
-          echo "marker=$DRAFT_MARKER" >>"$GITHUB_OUTPUT"
+          marker="provider-curl-finalize:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
+          printf '%s\n\n%s\n' \
+            "$marker" \
+            'Bounded unauthenticated HTTP GET provider for Dekopon 0.11.1. Verify the component with the attached checksum and public GitHub attestations.' \
+            >"$RUNNER_TEMP/release-notes.md"
+          gh release create "$SOURCE_TAG" \
+            --verify-tag --draft --title "$SOURCE_TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" >/dev/null
+          release_id=
+          for _attempt in {1..12}; do
+            gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              | jq 'add // []' >"$RUNNER_TEMP/releases-after-create.json"
+            release_id=$(jq -r --arg marker "$marker" '
+              [.[] | select(
+                .tag_name == "v0.1.0" and .draft == true and .prerelease == false and
+                ((.body // "") | startswith($marker)) and (.assets | length) == 0
+              )] | if length == 1 then .[0].id else empty end
+            ' "$RUNNER_TEMP/releases-after-create.json")
+            if [[ "$release_id" =~ ^[0-9]+$ ]]; then break; fi
+            sleep 5
+          done
+          [[ "$release_id" =~ ^[0-9]+$ ]]
+          echo "release_id=$release_id" >>"$GITHUB_OUTPUT"
+          echo "marker=$marker" >>"$GITHUB_OUTPUT"
 
       - name: Upload exact assets and capture immutable asset IDs
         id: upload
@@ -424,137 +455,9 @@ jobs:
           cmp dist/curl-provider.wasm.sha256 \
             "$RUNNER_TEMP/draft-assets/curl-provider.wasm.sha256"
 
-      - name: Authenticate exact ORAS client to GHCR
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "$GH_TOKEN" | "$RUNNER_TEMP/oras" login ghcr.io \
-            --username "$GITHUB_ACTOR" --password-stdin
-
-      - name: Build and capture one local OCI manifest from tagged bytes
-        id: layout
-        shell: bash
-        run: |
-          set -euo pipefail
-          layout="$RUNNER_TEMP/oci-layout"
-          (
-            cd dist
-            "$RUNNER_TEMP/oras" push --oci-layout "$layout:0.1.0" \
-              --artifact-type application/vnd.dekopon.provider.v1+wasm \
-              --annotation "org.opencontainers.image.revision=$SOURCE_SHA" \
-              --annotation "dev.dekopon.release-run=recovery.$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT" \
-              curl-provider.wasm:application/wasm
-          )
-          digest=$("$RUNNER_TEMP/oras" resolve --oci-layout "$layout:0.1.0")
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          "$RUNNER_TEMP/oras" manifest fetch --oci-layout "$layout@$digest" \
-            >"$RUNNER_TEMP/local-manifest.json"
-          jq -e --arg layer "sha256:$EXPECTED_SHA" --arg revision "$SOURCE_SHA" \
-            --arg run "recovery.$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT" '
-              (.layers | length) == 1 and
-              .layers[0].digest == $layer and
-              .layers[0].mediaType == "application/wasm" and
-              .layers[0].annotations["org.opencontainers.image.title"] == "curl-provider.wasm" and
-              .annotations["org.opencontainers.image.revision"] == $revision and
-              .annotations["dev.dekopon.release-run"] == $run
-            ' "$RUNNER_TEMP/local-manifest.json" >/dev/null
-          echo "manifest_digest=$digest" >>"$GITHUB_OUTPUT"
-
-      - name: Record immutable package ownership before the remote copy
+      - name: Record that this finalizer performs no package mutation
         id: state
-        run: echo 'push_started=true' >>"$GITHUB_OUTPUT"
-
-      - name: Copy only the captured manifest to the absent package
-        env:
-          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$RUNNER_TEMP/oras" cp --from-oci-layout \
-            "$RUNNER_TEMP/oci-layout@$MANIFEST_DIGEST" "$OCI_REPOSITORY:0.1.0"
-          [[ "$("$RUNNER_TEMP/oras" resolve "$OCI_REPOSITORY:0.1.0")" == \
-             "$MANIFEST_DIGEST" ]]
-
-      - name: Capture exact private package and version IDs
-        id: capture
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          for _attempt in {1..12}; do
-            if package=$(gh api "$PACKAGE_ENDPOINT" 2>/dev/null) && \
-               gh api --paginate --slurp "$PACKAGE_ENDPOINT/versions?per_page=100" \
-                 | jq 'add // []' >"$RUNNER_TEMP/versions.json"; then
-              package_id=$(jq -er 'select(.visibility == "private") | .id' <<<"$package")
-              count=$(jq length "$RUNNER_TEMP/versions.json")
-              version_id=$(jq -r --arg digest "$MANIFEST_DIGEST" '
-                .[] | select(.name == $digest and .metadata.container.tags == ["0.1.0"]) | .id
-              ' "$RUNNER_TEMP/versions.json")
-              if [[ "$package_id" =~ ^[0-9]+$ && "$count" == 1 && \
-                    "$version_id" =~ ^[0-9]+$ ]]; then
-                echo "package_id=$package_id" >>"$GITHUB_OUTPUT"
-                echo "package_version_id=$version_id" >>"$GITHUB_OUTPUT"
-                exit 0
-              fi
-            fi
-            sleep 5
-          done
-          echo 'error: exact private package/version did not become observable' >&2
-          exit 1
-
-      - name: Verify private digest, layer bytes, basename, and exact tag set
-        env:
-          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$("$RUNNER_TEMP/oras" resolve "$OCI_REPOSITORY:0.1.0")" == \
-             "$MANIFEST_DIGEST" ]]
-          "$RUNNER_TEMP/oras" manifest fetch "$OCI_REPOSITORY@$MANIFEST_DIGEST" \
-            >"$RUNNER_TEMP/remote-manifest.json"
-          cmp "$RUNNER_TEMP/local-manifest.json" "$RUNNER_TEMP/remote-manifest.json"
-          jq -e --arg digest "sha256:$EXPECTED_SHA" '
-            (.layers | length) == 1 and
-            .layers[0].digest == $digest and
-            .layers[0].mediaType == "application/wasm" and
-            .layers[0].annotations["org.opencontainers.image.title"] == "curl-provider.wasm"
-          ' "$RUNNER_TEMP/remote-manifest.json" >/dev/null
-          mkdir "$RUNNER_TEMP/private-pull"
-          (cd "$RUNNER_TEMP/private-pull" && \
-            "$RUNNER_TEMP/oras" pull "$OCI_REPOSITORY@$MANIFEST_DIGEST")
-          [[ "$(find "$RUNNER_TEMP/private-pull" -maxdepth 1 -type f | wc -l)" == 1 ]]
-          cmp dist/curl-provider.wasm "$RUNNER_TEMP/private-pull/curl-provider.wasm"
-          [[ "$("$RUNNER_TEMP/oras" repo tags "$OCI_REPOSITORY" | sort)" == 0.1.0 ]]
-
-      - name: Make the validated one-version package public last
-        id: package-public
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
-          PACKAGE_ID: ${{ steps.capture.outputs.package_id }}
-          PACKAGE_VERSION_ID: ${{ steps.capture.outputs.package_version_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          package=$(gh api "$PACKAGE_ENDPOINT")
-          gh api --paginate --slurp "$PACKAGE_ENDPOINT/versions?per_page=100" \
-            | jq 'add // []' >"$RUNNER_TEMP/versions-before-public.json"
-          jq -e --argjson id "$PACKAGE_ID" \
-            '.id == $id and .visibility == "private"' <<<"$package" >/dev/null
-          jq -e --argjson id "$PACKAGE_VERSION_ID" --arg digest "$MANIFEST_DIGEST" '
-            length == 1 and .[0].id == $id and .[0].name == $digest and
-            .[0].metadata.container.tags == ["0.1.0"]
-          ' "$RUNNER_TEMP/versions-before-public.json" >/dev/null
-          [[ "$("$RUNNER_TEMP/oras" resolve "$OCI_REPOSITORY:0.1.0")" == \
-             "$MANIFEST_DIGEST" ]]
-          gh api --method PATCH "$PACKAGE_ENDPOINT/visibility" \
-            -f visibility=public >/dev/null
-          [[ "$(gh api "$PACKAGE_ENDPOINT" --jq .visibility)" == public ]]
-          echo 'publicized=true' >>"$GITHUB_OUTPUT"
+        run: echo 'push_started=false' >>"$GITHUB_OUTPUT"
 
       - name: Reverify all mutable and immutable state before finalization
         env:
@@ -563,9 +466,9 @@ jobs:
           WASM_ASSET_ID: ${{ steps.upload.outputs.wasm_asset_id }}
           CHECKSUM_ASSET_ID: ${{ steps.upload.outputs.checksum_asset_id }}
           MARKER: ${{ steps.create.outputs.marker }}
-          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
-          PACKAGE_ID: ${{ steps.capture.outputs.package_id }}
-          PACKAGE_VERSION_ID: ${{ steps.capture.outputs.package_version_id }}
+          MANIFEST_DIGEST: ${{ steps.preflight.outputs.manifest_digest }}
+          PACKAGE_ID: ${{ steps.preflight.outputs.package_id }}
+          PACKAGE_VERSION_ID: ${{ steps.preflight.outputs.package_version_id }}
         shell: bash
         run: |
           set -euo pipefail
@@ -678,7 +581,7 @@ jobs:
           WASM_ASSET_ID: ${{ steps.upload.outputs.wasm_asset_id }}
           CHECKSUM_ASSET_ID: ${{ steps.upload.outputs.checksum_asset_id }}
           MARKER: ${{ steps.create.outputs.marker }}
-          MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
+          MANIFEST_DIGEST: ${{ steps.preflight.outputs.manifest_digest }}
         shell: bash
         run: |
           set -euo pipefail
@@ -749,7 +652,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write # Delete only the release ID captured by this recovery run.
-      packages: write # Re-private/delete only the captured package version and package.
+      packages: read # Verify but never mutate the pinned public residual package.
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: v0.1.0
@@ -760,7 +663,7 @@ jobs:
       PACKAGE_ID: ${{ needs.publish.outputs.package_id }}
       PACKAGE_VERSION_ID: ${{ needs.publish.outputs.package_version_id }}
     steps:
-      - name: Restore prior absence by immutable IDs and surface cleanup errors
+      - name: Delete only the captured release and preserve the residual OCI
         shell: bash
         run: |
           set -uo pipefail
@@ -787,7 +690,7 @@ jobs:
           }
 
           package_present=false
-          if [[ "$PUSH_STARTED" == true || -n "$PACKAGE_VERSION_ID" ]]; then
+          if [[ "$PUSH_STARTED" == true ]]; then
             if [[ "$PRIOR_VISIBILITY" != absent ]]; then
               echo 'error: refusing package cleanup without captured prior absence' >&2
               failures=$((failures + 1))
@@ -939,4 +842,4 @@ jobs:
             echo "error: rollback completed with $failures failure(s)" >&2
             exit 1
           fi
-          echo 'rollback verified: recovery-owned release/package state is absent'
+          echo 'release rollback complete; pinned public residual OCI was not mutated'
