@@ -61,10 +61,13 @@ this makes the anonymous boundary executable rather than relying on ambient CLI 
 Recovery run
 [`32777291858`](https://github.com/dekopon-agents/dekopon-provider-curl/actions/runs/32777291858)
 then created and exactly verified the CycloneDX attestation at recovery commit
-`7d3c700e534e4bc6dd73f8cdf1bfc26c351fcedc`, but the integration was denied while asking GitHub to
-generate release notes, before any release existed. Run
+`7d3c700e534e4bc6dd73f8cdf1bfc26c351fcedc`, but its raw REST draft request was denied before any
+release existed. Runs
 [`32779510352`](https://github.com/dekopon-agents/dekopon-provider-curl/actions/runs/32779510352)
-proved that adding `pull-requests: read` did not make that generated-notes operation available. Both
-no-op rollbacks confirmed package/release absence. Subsequent recovery pins and reuses the one
-immutable SBOM attestation, supplies fixed deterministic release notes, and does not create a
-duplicate.
+and
+[`32781476757`](https://github.com/dekopon-agents/dekopon-provider-curl/actions/runs/32781476757)
+proved that neither adding `pull-requests: read` nor replacing generated notes with fixed notes made
+that request form available. All no-op rollbacks confirmed package/release absence. Subsequent
+recovery pins and reuses the one immutable SBOM attestation and uses the already proven organization
+pattern, `gh release create --verify-tag`, with marker-owned fixed notes and no `target_commitish` or
+generated-notes request. It does not create a duplicate attestation.

@@ -173,6 +173,7 @@ jobs:
       release_id: ${{ steps.create.outputs.release_id }}
       wasm_asset_id: ${{ steps.upload.outputs.wasm_asset_id }}
       checksum_asset_id: ${{ steps.upload.outputs.checksum_asset_id }}
+      marker: ${{ steps.create.outputs.marker }}
       manifest_digest: ${{ steps.layout.outputs.manifest_digest }}
       push_started: ${{ steps.state.outputs.push_started }}
       package_id: ${{ steps.capture.outputs.package_id }}
@@ -307,18 +308,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
-            -f tag_name="$SOURCE_TAG" \
-            -f target_commitish="$SOURCE_SHA" \
-            -f name="$SOURCE_TAG" \
-            -f body='Bounded unauthenticated HTTP GET provider for Dekopon 0.11.1. Verify the component with the attached checksum and public GitHub attestations.' \
-            -F draft=true \
-            -F prerelease=false >"$RUNNER_TEMP/created-release.json"
-          release_id=$(jq -er --arg tag "$SOURCE_TAG" '
-            select(.tag_name == $tag and .draft == true and .prerelease == false) | .id
-          ' "$RUNNER_TEMP/created-release.json")
+          marker="provider-curl-recovery:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
+          printf '%s\n\n%s\n' \
+            "$marker" \
+            'Bounded unauthenticated HTTP GET provider for Dekopon 0.11.1. Verify the component with the attached checksum and public GitHub attestations.' \
+            >"$RUNNER_TEMP/release-notes.md"
+          gh release create "$SOURCE_TAG" \
+            --verify-tag \
+            --draft \
+            --title "$SOURCE_TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" >/dev/null
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq 'add // []' >"$RUNNER_TEMP/releases-after-create.json"
+          release_id=$(jq -er --arg tag "$SOURCE_TAG" --arg marker "$marker" '
+            [.[] | select(
+              .tag_name == $tag and .draft == true and .prerelease == false and
+              ((.body // "") | startswith($marker)) and (.assets | length) == 0
+            )] | if length == 1 then .[0].id else error("owned draft cardinality") end
+          ' "$RUNNER_TEMP/releases-after-create.json")
           [[ "$release_id" =~ ^[0-9]+$ ]]
           echo "release_id=$release_id" >>"$GITHUB_OUTPUT"
+          echo "marker=$marker" >>"$GITHUB_OUTPUT"
 
       - name: Upload exact assets and capture immutable asset IDs
         id: upload
@@ -359,16 +369,19 @@ jobs:
           RELEASE_ID: ${{ steps.create.outputs.release_id }}
           WASM_ASSET_ID: ${{ steps.upload.outputs.wasm_asset_id }}
           CHECKSUM_ASSET_ID: ${{ steps.upload.outputs.checksum_asset_id }}
+          MARKER: ${{ steps.create.outputs.marker }}
         shell: bash
         run: |
           set -euo pipefail
           release=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")
           jq -e \
             --arg tag "$SOURCE_TAG" \
+            --arg marker "$MARKER" \
             --argjson id "$RELEASE_ID" \
             --argjson wasm_id "$WASM_ASSET_ID" \
             --argjson checksum_id "$CHECKSUM_ASSET_ID" '
               .id == $id and .tag_name == $tag and .draft == true and .prerelease == false and
+              ((.body // "") | startswith($marker)) and
               ([.assets[] | {name, id}] | sort_by(.name)) ==
                 ([
                   {name: "curl-provider.wasm", id: $wasm_id},
@@ -525,6 +538,7 @@ jobs:
           RELEASE_ID: ${{ steps.create.outputs.release_id }}
           WASM_ASSET_ID: ${{ steps.upload.outputs.wasm_asset_id }}
           CHECKSUM_ASSET_ID: ${{ steps.upload.outputs.checksum_asset_id }}
+          MARKER: ${{ steps.create.outputs.marker }}
           MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
           PACKAGE_ID: ${{ steps.capture.outputs.package_id }}
           PACKAGE_VERSION_ID: ${{ steps.capture.outputs.package_version_id }}
@@ -542,10 +556,12 @@ jobs:
           release=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")
           jq -e \
             --arg tag "$SOURCE_TAG" \
+            --arg marker "$MARKER" \
             --argjson id "$RELEASE_ID" \
             --argjson wasm_id "$WASM_ASSET_ID" \
             --argjson checksum_id "$CHECKSUM_ASSET_ID" '
               .id == $id and .tag_name == $tag and .draft == true and .prerelease == false and
+              ((.body // "") | startswith($marker)) and
               ([.assets[] | {name, id}] | sort_by(.name)) ==
                 ([
                   {name: "curl-provider.wasm", id: $wasm_id},
@@ -637,6 +653,7 @@ jobs:
           RELEASE_ID: ${{ steps.create.outputs.release_id }}
           WASM_ASSET_ID: ${{ steps.upload.outputs.wasm_asset_id }}
           CHECKSUM_ASSET_ID: ${{ steps.upload.outputs.checksum_asset_id }}
+          MARKER: ${{ steps.create.outputs.marker }}
           MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
         shell: bash
         run: |
@@ -656,10 +673,12 @@ jobs:
           release=$(curl --fail --silent --show-error \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$SOURCE_TAG")
           jq -e \
+            --arg marker "$MARKER" \
             --argjson id "$RELEASE_ID" \
             --argjson wasm_id "$WASM_ASSET_ID" \
             --argjson checksum_id "$CHECKSUM_ASSET_ID" '
               .id == $id and .draft == false and .prerelease == false and
+              ((.body // "") | startswith($marker)) and
               ([.assets[] | {name, id}] | sort_by(.name)) ==
                 ([
                   {name: "curl-provider.wasm", id: $wasm_id},
