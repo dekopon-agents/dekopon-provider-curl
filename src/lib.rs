@@ -12,7 +12,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use dekopon_provider_http::{Header, HttpError, HttpErrorCode, Request, Response, method};
 use dekopon_provider_sdk::{
-    CapabilityId, ComponentResponse, EffectKind, Idempotency, Provider, ProviderApiVersion,
+    CapabilityId, CommandRun, ComponentResponse, EffectKind, Provider, ProviderApiVersion,
     ProviderCapability, ProviderError, ProviderManifest, RiskLevel,
 };
 use serde::Serialize;
@@ -23,7 +23,7 @@ mod uri;
 
 const PROVIDER_ID: &str = "curl";
 const CAPABILITY: &str = "curl.get";
-const USER_AGENT: &str = "dekopon-provider-curl/0.1.0";
+const USER_AGENT: &str = concat!("dekopon-provider-curl/", env!("CARGO_PKG_VERSION"));
 
 const MAX_REQUEST_HEADERS: usize = 32;
 const MAX_HEADER_NAME_BYTES: usize = 64;
@@ -88,16 +88,13 @@ impl Provider for Curl {
                     .to_owned(),
                 effect: EffectKind::ReadOnly,
                 risk: RiskLevel::Medium,
-                idempotency: Idempotency::Idempotent,
                 input_schema: input_schema(),
             }],
         }
     }
 
-    fn resolve_command(
-        argv: &[String],
-    ) -> Result<dekopon_provider_sdk::CommandInvocation, ProviderError> {
-        command::resolve(argv)
+    fn run_command(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
+        Ok(command::run(argv, stdin))
     }
 
     fn invoke(capability: &CapabilityId, input: Value) -> Result<Value, ProviderError> {
@@ -427,7 +424,7 @@ fn invalid_response() -> ProviderError {
     error("invalid-response", INVALID_RESPONSE_MESSAGE)
 }
 
-dekopon_provider_sdk::export_provider_with_commands!(Curl, bindings);
+dekopon_provider_sdk::export_provider_with_cli!(Curl, bindings);
 
 #[cfg(test)]
 mod tests;

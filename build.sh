@@ -13,10 +13,10 @@ mkdir -p "$(dirname "$component")"
 component_dir=$(cd "$(dirname "$component")" && pwd -P)
 component="$component_dir/$(basename "$component")"
 
-rust_toolchain="1.97.0"
-required_rustc="rustc 1.97.0 (2d8144b78 2026-07-07)"
+rust_toolchain="1.98.1"
+required_rustc="rustc 1.98.1 (48a229cea 2026-09-01)"
 metadata_domain="dekopon-provider-repro-v1"
-required_wasm_tools_version="1.236.1"
+required_wasm_tools_version="1.259.0"
 maximum_component_bytes=$((512 * 1024))
 
 command -v python3 >/dev/null 2>&1 || {
@@ -54,7 +54,7 @@ fi
 cmp "$root/security/wasm-dependencies.txt" "$target_root/wasm-dependencies.generated"
 cmp "$root/THIRD_PARTY_NOTICES.md" "$target_root/THIRD_PARTY_NOTICES.generated.md"
 printf '%s  %s\n' \
-  '02ba5a92067f53bc8f48e10bf221229c5b7f33f791a031741da5011c32ab37c9' \
+  'eac383801715cc62f41f7267de5c191827cfd2c45c766cda5600cfef2e1c03dd' \
   "$root/wit/deps/provider.wit" \
   'd0655d1ceba81fbd810f125cfc8fb2cbd8ad0696d91d34631b6b54f185dbc174' \
   "$root/wit/deps/http.wit" >"$target_root/wit.sha256"

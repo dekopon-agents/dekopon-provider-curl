@@ -1,4 +1,4 @@
-name: Release v0.1.0
+name: Release
 
 on:
   push:
@@ -13,10 +13,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MSRV: "1.89.0"
-  RELEASE_RUST: "1.97.0"
-  WASM_TOOLS_VERSION: "1.236.1"
-  WASMTIME_VERSION: "48.0.0"
+  MSRV: "1.98.1"
+  RELEASE_RUST: "1.98.1"
+  WASM_TOOLS_VERSION: "1.259.0"
+  WASMTIME_VERSION: "48.0.2"
   CARGO_DENY_VERSION: "0.20.2"
   CARGO_CYCLONEDX_VERSION: "0.5.9"
   ORAS_VERSION: "1.2.3"
@@ -40,13 +40,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify exact annotated v0.1.0 tag at current main
+      - name: Verify the annotated release tag at current main
         id: release
         shell: bash
         run: |
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
-          [[ "$tag" == "v0.1.0" ]]
           [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
           [[ "$(git cat-file -t "refs/tags/$tag")" == tag ]]
@@ -73,7 +72,6 @@ jobs:
             --version "$WASM_TOOLS_VERSION" --locked
           cargo "+$RELEASE_RUST" install wasmtime-cli \
             --version "$WASMTIME_VERSION" --locked
-          cargo "+$RELEASE_RUST" install dekopon-run --version 0.11.1 --locked
           cargo "+$RELEASE_RUST" install cargo-deny \
             --version "$CARGO_DENY_VERSION" --locked
           cargo "+$RELEASE_RUST" install cargo-cyclonedx \
@@ -110,10 +108,10 @@ jobs:
               if line and not line.startswith("#"):
                   name, version, _source = line.split(" ", 2)
                   inventory.add((name, version))
-          if tree != inventory or len(tree) != 43:
+          if tree != inventory or len(tree) != 39:
               raise SystemExit("isolated inventory differs from cargo tree normal/build graph")
           PY
-          test "$(grep -Evc '^#|^$' security/wasm-dependencies.txt)" -eq 43
+          test "$(grep -Evc '^#|^$' security/wasm-dependencies.txt)" -eq 39
           grep -Fq 'Unicode-3.0' THIRD_PARTY_NOTICES.md
           grep -Fq Zlib THIRD_PARTY_NOTICES.md
           grep -Fq 'LLVM-exception' THIRD_PARTY_NOTICES.md
@@ -142,7 +140,7 @@ jobs:
             .bomFormat == "CycloneDX" and
             .specVersion == "1.5" and
             .metadata.component.name == "dekopon-curl-provider" and
-            (.components | length) == 43
+            (.components | length) == 39
           ' dist/curl-provider.cdx.json >/dev/null
 
       - name: Rebuild two independent clean git archives
@@ -210,7 +208,7 @@ jobs:
           jq -e '
             .bomFormat == "CycloneDX" and
             .specVersion == "1.5" and
-            (.components | length) == 43
+            (.components | length) == 39
           ' sbom/curl-provider.cdx.json >/dev/null
       - name: Attest build provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
@@ -255,7 +253,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF_NAME" == "v0.1.0" ]]
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           git fetch --no-tags origin main:refs/remotes/origin/main
           [[ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" == tag ]]
@@ -282,7 +280,7 @@ jobs:
           marker="provider-curl-run:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
           printf '%s\n\n%s\n' \
             "$marker" \
-            'Bounded unauthenticated HTTP GET provider for Dekopon 0.11.1. Verify the component with the attached checksum and public GitHub attestations.' \
+            'Bounded unauthenticated HTTP GET provider for Dekopon 0.13.0. Verify the component with the attached checksum and public GitHub attestations.' \
             >"$RUNNER_TEMP/release-notes.md"
           gh release create "$GITHUB_REF_NAME" \
             --verify-tag \
@@ -432,10 +430,11 @@ jobs:
           echo "$ORAS_LINUX_AMD64_SHA256  $RUNNER_TEMP/$archive" | shasum -a 256 -c -
           tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" oras
           install -m 0755 "$RUNNER_TEMP/oras" "$RUNNER_TEMP/bin-oras"
-      - name: Prove the v0.1.0 package is wholly absent before publication
+      - name: Prove this exact version is absent before publication
         id: preflight
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
@@ -448,16 +447,26 @@ jobs:
             "https://api.github.com/$PACKAGE_ENDPOINT")
           case "$status" in
             404)
+              # The first release owns package creation, so its rollback may delete the package.
               echo 'prior_visibility=absent' >>"$GITHUB_OUTPUT"
               ;;
             200)
+              # Later releases add one version to a package earlier releases still own. Published
+              # versions are immutable, so only the new tag has to be absent.
               visibility=$(jq -er '.visibility' "$body")
               echo "prior_visibility=$visibility" >>"$GITHUB_OUTPUT"
-              echo "error: v0.1.0 requires a provably absent package; found $visibility" >&2
-              exit 1
+              gh api --paginate --slurp "$PACKAGE_ENDPOINT/versions?per_page=100" \
+                | jq 'add // []' >"$RUNNER_TEMP/versions-before.json"
+              taken=$(jq --arg tag "$VERSION" \
+                '[.[] | select(.metadata.container.tags | index($tag))] | length' \
+                "$RUNNER_TEMP/versions-before.json")
+              [[ "$taken" == 0 ]] || {
+                echo "error: $OCI_REPOSITORY:$VERSION already exists and is immutable" >&2
+                exit 1
+              }
               ;;
             *)
-              echo "error: package absence check returned HTTP $status" >&2
+              echo "error: package discovery returned HTTP $status" >&2
               cat "$body" >&2
               exit 1
               ;;
@@ -503,7 +512,7 @@ jobs:
       - name: Record immutable publication ownership before the remote copy
         id: state
         run: echo 'push_started=true' >>"$GITHUB_OUTPUT"
-      - name: Copy the captured manifest to the previously absent package
+      - name: Copy the captured manifest to the package
         env:
           MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
           VERSION: ${{ needs.build.outputs.version }}
@@ -514,7 +523,7 @@ jobs:
             "$RUNNER_TEMP/oci-layout@$MANIFEST_DIGEST" "$OCI_REPOSITORY:$VERSION"
           [[ "$("$RUNNER_TEMP/bin-oras" resolve "$OCI_REPOSITORY:$VERSION")" == \
              "$MANIFEST_DIGEST" ]]
-      - name: Capture IDs only after the exact private package version exists
+      - name: Capture IDs only after the exact package version exists
         id: capture
         env:
           GH_TOKEN: ${{ github.token }}
@@ -527,13 +536,12 @@ jobs:
             if package=$(gh api "$PACKAGE_ENDPOINT" 2>/dev/null) && \
                gh api --paginate --slurp "$PACKAGE_ENDPOINT/versions?per_page=100" \
                  | jq 'add // []' >"$RUNNER_TEMP/versions.json"; then
-              package_id=$(jq -er 'select(.visibility == "private") | .id' <<<"$package")
-              count=$(jq 'length' "$RUNNER_TEMP/versions.json")
+              package_id=$(jq -er '.id' <<<"$package")
               version_id=$(jq -r --arg digest "$MANIFEST_DIGEST" --arg tag "$VERSION" '
-                .[] | select(.name == $digest and .metadata.container.tags == [$tag]) | .id
+                [.[] | select(.name == $digest and .metadata.container.tags == [$tag]) | .id]
+                | if length == 1 then .[0] else empty end
               ' "$RUNNER_TEMP/versions.json")
-              if [[ "$package_id" =~ ^[0-9]+$ && "$count" == 1 && \
-                    "$version_id" =~ ^[0-9]+$ ]]; then
+              if [[ "$package_id" =~ ^[0-9]+$ && "$version_id" =~ ^[0-9]+$ ]]; then
                 echo "package_id=$package_id" >>"$GITHUB_OUTPUT"
                 echo "package_version_id=$version_id" >>"$GITHUB_OUTPUT"
                 exit 0
@@ -541,9 +549,9 @@ jobs:
             fi
             sleep 5
           done
-          echo 'error: exact private package/version did not become observable' >&2
+          echo 'error: exact package/version did not become observable' >&2
           exit 1
-      - name: Verify private bytes, pinned manifest, and exact tag set
+      - name: Verify published bytes, pinned manifest, and the new tag
         env:
           EXPECTED_SHA: ${{ needs.build.outputs.sha256 }}
           MANIFEST_DIGEST: ${{ steps.layout.outputs.manifest_digest }}
@@ -567,7 +575,8 @@ jobs:
             "$RUNNER_TEMP/bin-oras" pull "$OCI_REPOSITORY@$MANIFEST_DIGEST")
           test "$(find "$RUNNER_TEMP/private-pull" -maxdepth 1 -type f | wc -l)" -eq 1
           cmp dist/curl-provider.wasm "$RUNNER_TEMP/private-pull/curl-provider.wasm"
-          [[ "$("$RUNNER_TEMP/bin-oras" repo tags "$OCI_REPOSITORY" | sort)" == "$VERSION" ]]
+          "$RUNNER_TEMP/bin-oras" repo tags "$OCI_REPOSITORY" >"$RUNNER_TEMP/oci-tags.txt"
+          grep -Fxq -- "$VERSION" "$RUNNER_TEMP/oci-tags.txt"
       - name: Make the validated package public last
         id: publish
         env:
@@ -582,21 +591,22 @@ jobs:
           package=$(gh api "$PACKAGE_ENDPOINT")
           gh api --paginate --slurp "$PACKAGE_ENDPOINT/versions?per_page=100" \
             | jq 'add // []' >"$RUNNER_TEMP/versions-before-public.json"
-          jq -e --argjson package_id "$PACKAGE_ID" '
-            .id == $package_id and .visibility == "private"
-          ' <<<"$package" >/dev/null
+          jq -e --argjson package_id "$PACKAGE_ID" '.id == $package_id' \
+            <<<"$package" >/dev/null
           jq -e --argjson id "$PACKAGE_VERSION_ID" \
             --arg digest "$MANIFEST_DIGEST" --arg tag "$VERSION" '
-              length == 1 and
-              .[0].id == $id and
-              .[0].name == $digest and
-              .[0].metadata.container.tags == [$tag]
+              [.[] | select(
+                .id == $id and .name == $digest and .metadata.container.tags == [$tag]
+              )] | length == 1
             ' "$RUNNER_TEMP/versions-before-public.json" >/dev/null
           [[ "$("$RUNNER_TEMP/bin-oras" resolve "$OCI_REPOSITORY:$VERSION")" == \
              "$MANIFEST_DIGEST" ]]
-          [[ "$("$RUNNER_TEMP/bin-oras" repo tags "$OCI_REPOSITORY" | sort)" == "$VERSION" ]]
-          gh api --method PATCH "$PACKAGE_ENDPOINT/visibility" \
-            -f visibility=public >/dev/null
+          "$RUNNER_TEMP/bin-oras" repo tags "$OCI_REPOSITORY" >"$RUNNER_TEMP/oci-tags.txt"
+          grep -Fxq -- "$VERSION" "$RUNNER_TEMP/oci-tags.txt"
+          if [[ "$(jq -er '.visibility' <<<"$package")" != public ]]; then
+            gh api --method PATCH "$PACKAGE_ENDPOINT/visibility" \
+              -f visibility=public >/dev/null
+          fi
           [[ "$(gh api "$PACKAGE_ENDPOINT" --jq .visibility)" == public ]]
           echo 'publicized=true' >>"$GITHUB_OUTPUT"
       - name: Verify the now-public OCI artifact without credentials
@@ -616,8 +626,9 @@ jobs:
               "$OCI_REPOSITORY@$MANIFEST_DIGEST")
           test "$(find "$RUNNER_TEMP/public-pull" -maxdepth 1 -type f | wc -l)" -eq 1
           cmp dist/curl-provider.wasm "$RUNNER_TEMP/public-pull/curl-provider.wasm"
-          [[ "$("$RUNNER_TEMP/bin-oras" repo tags "${anonymous[@]}" \
-              "$OCI_REPOSITORY" | sort)" == "$VERSION" ]]
+          "$RUNNER_TEMP/bin-oras" repo tags "${anonymous[@]}" \
+            "$OCI_REPOSITORY" >"$RUNNER_TEMP/public-tags.txt"
+          grep -Fxq -- "$VERSION" "$RUNNER_TEMP/public-tags.txt"
 
   finalize:
     name: Reverify immutable publication state, then finalize
@@ -738,7 +749,7 @@ jobs:
           jq -e '
             (.worlds | length) == 1 and
             (.interfaces | length) == 1 and
-            (.worlds[0].exports | keys | sort) == ["describe", "invoke", "resolve-command"] and
+            (.worlds[0].exports | keys | sort) == ["describe", "invoke", "run-command"] and
             (.worlds[0].imports | length) == 1 and
             .packages[.interfaces[0].package].name == "dekopon:http@1.0.0" and
             .interfaces[0].name == "client" and
@@ -769,8 +780,9 @@ jobs:
           test "$(find "$RUNNER_TEMP/oci" -maxdepth 1 -type f | wc -l)" -eq 1
           cmp "$RUNNER_TEMP/prepublish/curl-provider.wasm" \
             "$RUNNER_TEMP/oci/curl-provider.wasm"
-          [[ "$("$RUNNER_TEMP/oras" repo tags "${anonymous[@]}" \
-              "$OCI_REPOSITORY" | sort)" == "$VERSION" ]]
+          "$RUNNER_TEMP/oras" repo tags "${anonymous[@]}" \
+            "$OCI_REPOSITORY" >"$RUNNER_TEMP/public-tags.txt"
+          grep -Fxq -- "$VERSION" "$RUNNER_TEMP/public-tags.txt"
 
           # Recheck every mutable pointer immediately before the only publication mutation.
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
@@ -788,10 +800,9 @@ jobs:
           ' <<<"$package" >/dev/null
           jq -e --argjson id "$PACKAGE_VERSION_ID" \
             --arg digest "$MANIFEST_DIGEST" --arg tag "$VERSION" '
-              length == 1 and
-              .[0].id == $id and
-              .[0].name == $digest and
-              .[0].metadata.container.tags == [$tag]
+              [.[] | select(
+                .id == $id and .name == $digest and .metadata.container.tags == [$tag]
+              )] | length == 1
             ' "$RUNNER_TEMP/versions-before-finalize.json" >/dev/null
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             | jq 'add // []' >"$RUNNER_TEMP/releases-before-finalize.json"
@@ -904,7 +915,7 @@ jobs:
           jq -e '
             (.worlds | length) == 1 and
             (.interfaces | length) == 1 and
-            (.worlds[0].exports | keys | sort) == ["describe", "invoke", "resolve-command"] and
+            (.worlds[0].exports | keys | sort) == ["describe", "invoke", "run-command"] and
             (.worlds[0].imports | length) == 1 and
             .packages[.interfaces[0].package].name == "dekopon:http@1.0.0" and
             .interfaces[0].name == "client" and
@@ -934,8 +945,9 @@ jobs:
             .layers[0].mediaType == "application/wasm" and
             .layers[0].annotations["org.opencontainers.image.title"] == "curl-provider.wasm"
           ' "$RUNNER_TEMP/manifest.json" >/dev/null
-          [[ "$("$RUNNER_TEMP/oras" repo tags "${anonymous[@]}" \
-              "$OCI_REPOSITORY" | sort)" == "$VERSION" ]]
+          "$RUNNER_TEMP/oras" repo tags "${anonymous[@]}" \
+            "$OCI_REPOSITORY" >"$RUNNER_TEMP/public-tags.txt"
+          grep -Fxq -- "$VERSION" "$RUNNER_TEMP/public-tags.txt"
 
   cleanup:
     name: Roll back only immutable state owned by a failed or cancelled run
@@ -991,8 +1003,8 @@ jobs:
           package_present=false
           current_package_id=
           if [[ "$PUSH_STARTED" == true || -n "$PACKAGE_VERSION_ID" ]]; then
-            if [[ "$PRIOR_VISIBILITY" != absent ]]; then
-              echo 'error: refusing package cleanup without captured prior absence' >&2
+            if [[ -z "$PRIOR_VISIBILITY" ]]; then
+              echo 'error: refusing package cleanup without captured prior visibility' >&2
               failures=$((failures + 1))
             elif [[ ! "$MANIFEST_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
               echo 'error: refusing package cleanup without an immutable manifest digest' >&2
@@ -1010,8 +1022,10 @@ jobs:
                     echo 'error: current package ID differs from the captured owned ID' >&2
                     failures=$((failures + 1))
                     package_present=false
-                  else
-                    # Hide public bytes before deleting anything; the captured prior state was absent.
+                  elif [[ "$PRIOR_VISIBILITY" == absent ]]; then
+                    # This run created the package, so hide public bytes before deleting anything.
+                    # A package an earlier release already published keeps its visibility: making
+                    # it private would take that release offline to roll this one back.
                     status=$(request PATCH "$PACKAGE_ENDPOINT/visibility" \
                       "$RUNNER_TEMP/package-private.json" '{"visibility":"private"}')
                     if [[ "$status" != 200 && "$status" != 204 ]]; then
@@ -1121,27 +1135,35 @@ jobs:
                     break
                   fi
                   remaining=$(jq 'length' "$RUNNER_TEMP/versions-after.json")
-                  non_owned=$(jq --arg digest "$MANIFEST_DIGEST" \
-                    '[.[] | select(.name != $digest)] | length' \
+                  owned=$(jq --arg digest "$MANIFEST_DIGEST" \
+                    '[.[] | select(.name == $digest)] | length' \
                     "$RUNNER_TEMP/versions-after.json")
-                  if [[ "$non_owned" != 0 ]]; then
+                  if [[ "$owned" != 0 ]]; then
+                    # A deleted version can remain briefly observable; retry within a bound.
+                    sleep 5
+                    continue
+                  fi
+                  if [[ "$PRIOR_VISIBILITY" != absent ]]; then
+                    # Earlier releases own this package; their versions and visibility stand.
+                    restored=true
+                    break
+                  fi
+                  if [[ "$remaining" != 0 ]]; then
                     echo 'error: package still has non-owned versions; left private, not deleted' >&2
                     failures=$((failures + 1))
                     break
                   fi
-                  if [[ "$remaining" == 0 ]]; then
-                    status=$(request DELETE "$PACKAGE_ENDPOINT" \
-                      "$RUNNER_TEMP/package-delete.json")
-                    if [[ "$status" == 404 ]]; then
-                      restored=true
-                      break
-                    elif [[ "$status" != 204 ]]; then
-                      echo "error: empty package deletion returned HTTP $status" >&2
-                      failures=$((failures + 1))
-                      break
-                    fi
+                  status=$(request DELETE "$PACKAGE_ENDPOINT" \
+                    "$RUNNER_TEMP/package-delete.json")
+                  if [[ "$status" == 404 ]]; then
+                    restored=true
+                    break
+                  elif [[ "$status" != 204 ]]; then
+                    echo "error: empty package deletion returned HTTP $status" >&2
+                    failures=$((failures + 1))
+                    break
                   fi
-                  # A deleted version/package can remain briefly observable; retry within a bound.
+                  # A deleted package can remain briefly observable; retry within a bound.
                   sleep 5
                   ;;
                 *)
@@ -1152,7 +1174,7 @@ jobs:
               esac
             done
             if [[ "$restored" != true ]]; then
-              echo 'error: initially absent package did not become absent after rollback' >&2
+              echo "error: this run's package version did not disappear after rollback" >&2
               failures=$((failures + 1))
             fi
           fi
@@ -1161,4 +1183,4 @@ jobs:
             echo "error: rollback completed with $failures surfaced failure(s)" >&2
             exit 1
           fi
-          echo 'rollback verified: captured release/package state is absent'
+          echo "rollback verified: this run's release and package version are absent"

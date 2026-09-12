@@ -7,7 +7,7 @@ Keep the provider closed and deterministic:
 - add no transport, URL authorization library, WASI, JS, subprocess, runtime networking, or ambient
   host capability;
 - never commit `.wasm`, checksums, `dist/`, or `target/`;
-- keep every public failure fixed and secret-free;
+- keep every public failure fixed and secret-free, rendered command-word text included;
 - regenerate and review the isolated normal/build graph in `security/wasm-dependencies.txt` and the
   checksum-verified, self-contained `THIRD_PARTY_NOTICES.md` bundle after a lock change.
 

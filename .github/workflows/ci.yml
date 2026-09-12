@@ -13,10 +13,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  MSRV: "1.89.0"
-  RELEASE_RUST: "1.97.0"
-  WASM_TOOLS_VERSION: "1.236.1"
-  WASMTIME_VERSION: "48.0.0"
+  MSRV: "1.98.1"
+  RELEASE_RUST: "1.98.1"
+  WASM_TOOLS_VERSION: "1.259.0"
+  WASMTIME_VERSION: "48.0.2"
   CARGO_DENY_VERSION: "0.20.2"
   CARGO_CYCLONEDX_VERSION: "0.5.9"
 
@@ -74,7 +74,7 @@ jobs:
               if line and not line.startswith("#"):
                   name, version, _source = line.split(" ", 2)
                   inventory.add((name, version))
-          if tree != inventory or len(tree) != 43:
+          if tree != inventory or len(tree) != 39:
               raise SystemExit("isolated inventory differs from cargo tree normal/build graph")
           PY
           if grep -Eq 'source = "git\+|path\+' Cargo.lock; then
@@ -104,7 +104,7 @@ jobs:
             .bomFormat == "CycloneDX" and
             .specVersion == "1.5" and
             .metadata.component.name == "dekopon-curl-provider" and
-            (.components | length) == 43
+            (.components | length) == 39
           ' "$RUNNER_TEMP/first.cdx.json" >/dev/null
           if grep -aF "$GITHUB_WORKSPACE" "$RUNNER_TEMP/first.cdx.json"; then
             echo "error: SBOM retained the checkout path" >&2
@@ -134,7 +134,6 @@ jobs:
             --version "$WASM_TOOLS_VERSION" --locked
           cargo "+$RELEASE_RUST" install wasmtime-cli \
             --version "$WASMTIME_VERSION" --locked
-          cargo "+$RELEASE_RUST" install dekopon-run --version 0.11.1 --locked
           cargo "+$RELEASE_RUST" install cargo-cyclonedx \
             --version "$CARGO_CYCLONEDX_VERSION" --locked
 

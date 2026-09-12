@@ -69,8 +69,8 @@ def normalize(value):
         return {key: normalize(item) for key, item in value.items()}
     return value
 
-if len(actual) != 43:
-    raise SystemExit(f"expected 43 isolated shipped components, found {len(actual)}")
+if len(actual) != 39:
+    raise SystemExit(f"expected 39 isolated shipped components, found {len(actual)}")
 document = normalize(document)
 encoded = json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 for local_path in (str(root), str(graph), str(graph.parent)):

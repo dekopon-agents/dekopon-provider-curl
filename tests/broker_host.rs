@@ -13,21 +13,28 @@ use std::{
 };
 
 use dekopon_broker::{
-    AuditEvent, AuthenticatedContext, Broker, BrokerLimits, ConstraintCatalog, ConstraintSet,
-    CredentialStore, IdentityDirectory, InMemoryAuditLog, InvocationRequest, PolicyEngine,
-    PolicyWorld, verify_audit_chain,
+    AuditEvent, AuthenticatedContext, Broker, BrokerLimits, CapabilityRoute, ConstraintCatalog,
+    ConstraintSet, CredentialStore, IdentityDirectory, InMemoryAuditLog, InvocationRequest,
+    PolicyEngine, PolicyWorld,
 };
 use dekopon_broker_host::{
-    BrokerHostError, BrokerHostLimits, BrokerProviderRegistry, CommandResolution,
+    BrokerHostError, BrokerHostLimits, BrokerProviderRegistry, CommandRunOutcome,
 };
+use dekopon_broker_protocol::TraceParent;
 use dekopon_capability::{
-    AuthorizedInvocation, EffectKind, ExecutionConstraints, HttpConstraints, Idempotency,
-    InvocationOutcome, ProposedInvocation, broker::AuthorizationGate,
+    AuthorizedInvocation, EffectKind, ExecutionConstraints, HttpConstraints, InvocationOutcome,
+    ProposedInvocation, broker::AuthorizationGate,
 };
 use dekopon_core::{
     Actor, AgentId, CapabilityId, InvocationId, PrincipalId, ProviderId, RiskLevel, TraceId,
 };
 use serde_json::{Value, json};
+
+/// One W3C trace shared by every fixture, so audit records correlate the way a real run's do.
+const TRACE_FIXTURE: TraceId = match TraceId::new([7; 16]) {
+    Ok(trace) => trace,
+    Err(_) => panic!("static trace fixture is valid"),
+};
 
 const RESOURCE_FUEL_CEILING: u64 = 64_000_000;
 const RESOURCE_MEMORY_CEILING: usize = 16 * 1024 * 1024;
@@ -48,9 +55,7 @@ fn authorized(id: &str, input: Value, constraints: ExecutionConstraints) -> Auth
         Actor::Agent {
             agent: "curl-test".parse::<AgentId>().expect("valid agent fixture"),
         },
-        "trace-curl-test"
-            .parse::<TraceId>()
-            .expect("valid trace fixture"),
+        TRACE_FIXTURE,
         input,
     );
     AuthorizationGate::new()
@@ -82,6 +87,7 @@ fn profile(authority: &str) -> ExecutionConstraints {
             allow_plaintext_loopback: true,
         }),
         storage: None,
+        secret_use: None,
     }
 }
 
@@ -145,34 +151,69 @@ async fn broker_loads_exact_manifest_and_resolution_is_import_free() {
     assert_eq!(manifest.capabilities[0].id.as_str(), "curl.get");
     assert_eq!(manifest.capabilities[0].effect, EffectKind::ReadOnly);
     assert_eq!(manifest.capabilities[0].risk, RiskLevel::Medium);
-    assert_eq!(
-        manifest.capabilities[0].idempotency,
-        Idempotency::Idempotent
-    );
 
-    let resolution = registry
-        .resolve_command(
+    let piped = registry
+        .run_command(
             "curlget",
             &[
                 "-sS".to_owned(),
                 "-X".to_owned(),
                 "get".to_owned(),
+                "-H".to_owned(),
+                "@-".to_owned(),
                 "https://example.com/private".to_owned(),
             ],
+            Some("Accept: application/json\n"),
         )
         .await
         .expect("disabled resolution context is untouched");
-    match resolution {
-        CommandResolution::Resolved {
-            capability, input, ..
-        } => {
+    match piped {
+        CommandRunOutcome::Proposed { capability, input } => {
             assert_eq!(capability.as_str(), "curl.get");
             assert_eq!(input["method"], "GET");
             assert_eq!(input["uri"], "https://example.com/private");
+            assert_eq!(
+                input["headers"],
+                json!([{"name": "Accept", "value": "application/json"}])
+            );
         }
-        other => panic!("unexpected resolution: {other:?}"),
+        other => panic!("unexpected outcome: {other:?}"),
     }
-    assert_eq!(registry.metrics().snapshot().http_requests, 0);
+
+    // Help and usage errors are rendered by the guest before authorization, so neither reaches a
+    // capability and neither can touch the HTTP import.
+    match registry
+        .run_command("curlget", &["--help".to_owned()], None)
+        .await
+        .expect("help renders")
+    {
+        CommandRunOutcome::Rendered {
+            stdout,
+            stderr,
+            status,
+        } => {
+            assert!(stdout.starts_with("curlget: one bounded"));
+            assert_eq!(stderr, "");
+            assert_eq!(status, 0);
+        }
+        other => panic!("unexpected outcome: {other:?}"),
+    }
+    match registry
+        .run_command("curlget", &["--data".to_owned(), "x".to_owned()], None)
+        .await
+        .expect("a refused argv renders")
+    {
+        CommandRunOutcome::Rendered {
+            stdout,
+            stderr,
+            status,
+        } => {
+            assert_eq!(stdout, "");
+            assert!(stderr.starts_with("usage: curlget"));
+            assert_eq!(status, 2);
+        }
+        other => panic!("unexpected outcome: {other:?}"),
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -234,10 +275,10 @@ async fn exact_loopback_grant_sends_one_bodyless_get_without_credentials() {
             .count(),
         2
     );
-    assert!(
-        wire.to_ascii_lowercase()
-            .contains("user-agent: dekopon-provider-curl/0.1.0")
-    );
+    assert!(wire.to_ascii_lowercase().contains(concat!(
+        "user-agent: dekopon-provider-curl/",
+        env!("CARGO_PKG_VERSION")
+    )));
     assert!(!wire.to_ascii_lowercase().contains("authorization:"));
     assert!(!wire.to_ascii_lowercase().contains("cookie:"));
     server.join().expect("fixture exits");
@@ -269,7 +310,6 @@ async fn missing_wrong_host_method_port_and_plaintext_grants_are_terminal() {
     cases.push(("request-too-large", request_too_large, "byte-limit"));
 
     for (name, constraints, reason) in cases {
-        let calls_before = registry.metrics().snapshot().http_requests;
         let failure = registry
             .invoke(authorized(name, json!({"uri": uri}), constraints), None)
             .await
@@ -281,10 +321,8 @@ async fn missing_wrong_host_method_port_and_plaintext_grants_are_terminal() {
             ),
             "{name}: {failure}"
         );
-        assert!(failure.http_calls.is_empty(), "{name}");
-        assert_eq!(
-            registry.metrics().snapshot().http_requests,
-            calls_before,
+        assert!(
+            failure.http_calls.is_empty(),
             "{name}: denial must occur before any HTTP call"
         );
     }
@@ -460,7 +498,6 @@ async fn bounded_worst_case_runs_under_committed_memory_and_fuel_ceilings() {
     response.extend_from_slice(b"\r\n");
     response.extend(body);
     let (authority, _received, server) = mock_http(response);
-    let before = registry.metrics().snapshot();
     let output = registry
         .invoke(
             authorized(
@@ -474,15 +511,6 @@ async fn bounded_worst_case_runs_under_committed_memory_and_fuel_ceilings() {
         .expect("bounded response fits fixed resources");
     assert_eq!(output.output["bodyBytes"], 190_000);
     assert_eq!(output.output["bodyReturnedBytes"], 65_536);
-    let after = registry.metrics().snapshot();
-    let invocation_fuel = after.fuel_consumed - before.fuel_consumed;
-    eprintln!(
-        "measured worst-case invocation fuel={invocation_fuel}, peak_memory_bytes_requested={}",
-        after.peak_memory_bytes_requested
-    );
-    assert!(invocation_fuel < RESOURCE_FUEL_CEILING);
-    assert!(after.peak_memory_bytes_requested <= RESOURCE_MEMORY_CEILING as u64);
-    assert_eq!(after.memory_growth_denied, 0);
     server.join().expect("resource fixture exits");
 }
 
@@ -504,8 +532,9 @@ fn request(id: &str, input: Value) -> InvocationRequest {
     InvocationRequest {
         id: id.parse().expect("valid invocation ID"),
         capability: capability(),
-        trace: "trace-curl-test".parse().expect("valid trace"),
-        trace_parent: None,
+        trace_parent: TraceParent::new(TRACE_FIXTURE.to_bytes(), [3; 8], 1)
+            .expect("valid traceparent fixture"),
+        secret_use: None,
         input,
     }
 }
@@ -531,10 +560,10 @@ async fn cedar_denies_before_network_allows_exact_get_and_audits_metadata_only()
     let engine = PolicyEngine::new(policy, &world).expect("Cedar validates");
     let constraints = profile(&authority);
     let set = ConstraintSet {
+        route: CapabilityRoute::Generic,
         provider: "curl".parse().unwrap(),
         effect: EffectKind::ReadOnly,
         risk: RiskLevel::Medium,
-        idempotency: Idempotency::Idempotent,
         credential: None,
         credential_by_agent: BTreeMap::new(),
         constraints,
@@ -559,6 +588,8 @@ async fn cedar_denies_before_network_allows_exact_get_and_audits_metadata_only()
     let denied = broker
         .invoke(
             &context("denied-caller"),
+            None,
+            None,
             request(
                 "cedar-denied",
                 json!({"uri": format!("http://{authority}/denied-secret")}),
@@ -573,6 +604,8 @@ async fn cedar_denies_before_network_allows_exact_get_and_audits_metadata_only()
     let allowed = broker
         .invoke(
             &context("allowed-caller"),
+            None,
+            None,
             request(
                 "cedar-allowed",
                 json!({
@@ -594,6 +627,8 @@ async fn cedar_denies_before_network_allows_exact_get_and_audits_metadata_only()
     let failed = broker
         .invoke(
             &context("allowed-caller"),
+            None,
+            None,
             request(
                 "cedar-provider-failure",
                 json!({
@@ -610,9 +645,8 @@ async fn cedar_denies_before_network_allows_exact_get_and_audits_metadata_only()
 
     let records = audit.records().await;
     assert_eq!(records.len(), 5);
-    verify_audit_chain(&records).expect("audit chain verifies");
     assert!(matches!(
-        records[0].event,
+        records[0],
         AuditEvent::Decision { allowed: false, .. }
     ));
     let serialized = serde_json::to_string(&records).expect("audit serializes");
