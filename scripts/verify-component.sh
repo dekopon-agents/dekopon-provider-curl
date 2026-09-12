@@ -8,11 +8,11 @@ core=${2:-"$root/target/wasm32-unknown-unknown/release/dekopon_curl_provider.was
 maximum_bytes=$((512 * 1024))
 
 [[ -f "$component" && -f "$core" ]]
-[[ "$(wasm-tools --version | awk '{print $2}')" == "1.236.1" ]]
+[[ "$(wasm-tools --version | awk '{print $2}')" == "1.259.0" ]]
 wasm-tools validate "$component"
 
 printf '%s  %s\n' \
-  '02ba5a92067f53bc8f48e10bf221229c5b7f33f791a031741da5011c32ab37c9' \
+  'eac383801715cc62f41f7267de5c191827cfd2c45c766cda5600cfef2e1c03dd' \
   "$root/wit/deps/provider.wit" \
   'd0655d1ceba81fbd810f125cfc8fb2cbd8ad0696d91d34631b6b54f185dbc174' \
   "$root/wit/deps/http.wit" | shasum -a 256 -c -
@@ -42,7 +42,7 @@ wit = json.loads(pathlib.Path(sys.argv[1]).read_text())
 if len(wit["worlds"]) != 1:
     raise SystemExit("expected exactly one decoded component world")
 world = wit["worlds"][0]
-if set(world["exports"]) != {"describe", "invoke", "resolve-command"}:
+if set(world["exports"]) != {"describe", "invoke", "run-command"}:
     raise SystemExit(f"unexpected component exports: {sorted(world['exports'])}")
 if len(world["imports"]) != 1 or len(wit["interfaces"]) != 1:
     raise SystemExit("expected exactly one component interface import")

@@ -8,49 +8,45 @@ The provider itself is licensed under MIT OR Apache-2.0. Its complete terms are 
 
 | Package | Version | SPDX expression | `.crate` SHA-256 | Exact archive legal documents |
 |---|---:|---|---|---|
-| [`anyhow`](https://crates.io/crates/anyhow/1.0.104) | `1.0.104` | `MIT OR Apache-2.0` | `330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`base64`](https://crates.io/crates/base64/0.22.1) | `0.22.1` | `MIT OR Apache-2.0` | `72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6` | `LICENSE-APACHE` (A013), `LICENSE-MIT` (A002) |
-| [`bitflags`](https://crates.io/crates/bitflags/2.13.1) | `2.13.1` | `MIT OR Apache-2.0` | `b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da` | `LICENSE-APACHE` (A013), `LICENSE-MIT` (A009) |
-| [`dekopon-capability`](https://crates.io/crates/dekopon-capability/0.11.1) | `0.11.1` | `MIT OR Apache-2.0` | `1d3cfcfa21708487bb5c481630a5dd86e64f41419e022fb48f2e41fd08f7597d` | None in archive; see bundled P001/P002 terms |
-| [`dekopon-core`](https://crates.io/crates/dekopon-core/0.11.1) | `0.11.1` | `MIT OR Apache-2.0` | `2452f38f698272b5ec24ec135c12b9e7d49f539592ec5a4d5bc64279c4bd2fee` | None in archive; see bundled P001/P002 terms |
-| [`dekopon-provider-http`](https://crates.io/crates/dekopon-provider-http/0.11.1) | `0.11.1` | `MIT OR Apache-2.0` | `8379b7627bc0aefcaee6bd4636fd83db2d99cd10ae2aa2ae1027eca189caa15c` | None in archive; see bundled P001/P002 terms |
-| [`dekopon-provider-sdk`](https://crates.io/crates/dekopon-provider-sdk/0.11.1) | `0.11.1` | `MIT OR Apache-2.0` | `e67c8bfe9430a19ff7212b1994da046bc20019d6c85481234de0835267436fd5` | None in archive; see bundled P001/P002 terms |
-| [`equivalent`](https://crates.io/crates/equivalent/1.0.2) | `1.0.2` | `Apache-2.0 OR MIT` | `877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f` | `LICENSE-APACHE` (A013), `LICENSE-MIT` (A010) |
-| [`foldhash`](https://crates.io/crates/foldhash/0.1.5) | `0.1.5` | `Zlib` | `d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2` | `LICENSE` (A014) |
-| [`hashbrown`](https://crates.io/crates/hashbrown/0.15.5) | `0.15.5` | `MIT OR Apache-2.0` | `9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1` | `LICENSE-APACHE` (A013), `LICENSE-MIT` (A017) |
-| [`hashbrown`](https://crates.io/crates/hashbrown/0.17.1) | `0.17.1` | `MIT OR Apache-2.0` | `ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a` | `LICENSE-APACHE` (A013), `LICENSE-MIT` (A017) |
-| [`heck`](https://crates.io/crates/heck/0.5.0) | `0.5.0` | `MIT OR Apache-2.0` | `2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea` | `LICENSE-APACHE` (A013), `LICENSE-MIT` (A011) |
-| [`id-arena`](https://crates.io/crates/id-arena/2.3.0) | `2.3.0` | `MIT/Apache-2.0` | `3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954` | `LICENSE-APACHE` (A013), `LICENSE-MIT` (A007) |
-| [`indexmap`](https://crates.io/crates/indexmap/2.14.0) | `2.14.0` | `Apache-2.0 OR MIT` | `d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9` | `LICENSE-APACHE` (A013), `LICENSE-MIT` (A015) |
-| [`itoa`](https://crates.io/crates/itoa/1.0.18) | `1.0.18` | `MIT OR Apache-2.0` | `8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`leb128fmt`](https://crates.io/crates/leb128fmt/0.1.0) | `0.1.0` | `MIT OR Apache-2.0` | `09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2` | `LICENSE-APACHE` (A013), `LICENSE-MIT` (A005) |
-| [`log`](https://crates.io/crates/log/0.4.34) | `0.4.34` | `MIT OR Apache-2.0` | `f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6` | `LICENSE-APACHE` (A013), `LICENSE-MIT` (A009) |
-| [`memchr`](https://crates.io/crates/memchr/2.8.3) | `2.8.3` | `Unlicense OR MIT` | `cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98` | `COPYING` (A001), `LICENSE-MIT` (A003), `UNLICENSE` (A012) |
-| [`prettyplease`](https://crates.io/crates/prettyplease/0.2.37) | `0.2.37` | `MIT OR Apache-2.0` | `479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`proc-macro2`](https://crates.io/crates/proc-macro2/1.0.107) | `1.0.107` | `MIT OR Apache-2.0` | `985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`quote`](https://crates.io/crates/quote/1.0.47) | `1.0.47` | `MIT OR Apache-2.0` | `1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`semver`](https://crates.io/crates/semver/1.0.28) | `1.0.28` | `MIT OR Apache-2.0` | `8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`serde`](https://crates.io/crates/serde/1.0.229) | `1.0.229` | `MIT OR Apache-2.0` | `4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`serde_core`](https://crates.io/crates/serde_core/1.0.229) | `1.0.229` | `MIT OR Apache-2.0` | `67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`serde_derive`](https://crates.io/crates/serde_derive/1.0.229) | `1.0.229` | `MIT OR Apache-2.0` | `e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`serde_json`](https://crates.io/crates/serde_json/1.0.151) | `1.0.151` | `MIT OR Apache-2.0` | `c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`syn`](https://crates.io/crates/syn/2.0.119) | `2.0.119` | `MIT OR Apache-2.0` | `872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`syn`](https://crates.io/crates/syn/3.0.4) | `3.0.4` | `MIT OR Apache-2.0` | `e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`thiserror`](https://crates.io/crates/thiserror/2.0.20) | `2.0.20` | `MIT OR Apache-2.0` | `ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`thiserror-impl`](https://crates.io/crates/thiserror-impl/2.0.20) | `2.0.20` | `MIT OR Apache-2.0` | `bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005) |
-| [`unicode-ident`](https://crates.io/crates/unicode-ident/1.0.24) | `1.0.24` | `(MIT OR Apache-2.0) AND Unicode-3.0` | `e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75` | `LICENSE-APACHE` (A008), `LICENSE-MIT` (A005), `LICENSE-UNICODE` (A016) |
-| [`unicode-xid`](https://crates.io/crates/unicode-xid/0.2.6) | `0.2.6` | `MIT OR Apache-2.0` | `ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853` | `COPYRIGHT` (A004), `LICENSE-APACHE` (A013), `LICENSE-MIT` (A011) |
-| [`wasm-encoder`](https://crates.io/crates/wasm-encoder/0.236.1) | `0.236.1` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `724fccfd4f3c24b7e589d333fc0429c68042897a7e8a5f8694f31792471841e7` | None in archive; see bundled P001/P002 terms |
-| [`wasm-metadata`](https://crates.io/crates/wasm-metadata/0.236.1) | `0.236.1` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `c909f94a49a8de3365f3c0344f064818f1e369ff1740c5b04f455f85d454768e` | None in archive; see bundled P001/P002 terms |
-| [`wasmparser`](https://crates.io/crates/wasmparser/0.236.1) | `0.236.1` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `a9b1e81f3eb254cf7404a82cee6926a4a3ccc5aad80cc3d43608a070c67aa1d7` | None in archive; see bundled P001/P002 terms |
-| [`wit-bindgen`](https://crates.io/crates/wit-bindgen/0.44.0) | `0.44.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `04bd9ed271234163b18c92783b0d406f08ca32c232e972f207a68c7b324c44bf` | `LICENSE-APACHE` (A013), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A006), `LICENSE-MIT` (A005) |
-| [`wit-bindgen-core`](https://crates.io/crates/wit-bindgen-core/0.44.0) | `0.44.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `b4103c7a3e178b75cd8b0b574fa199ed015e8399c9859b003865cc28834b474b` | `LICENSE-APACHE` (A013), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A006), `LICENSE-MIT` (A005) |
-| [`wit-bindgen-rt`](https://crates.io/crates/wit-bindgen-rt/0.44.0) | `0.44.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `653c85dd7aee6fe6f4bded0d242406deadae9819029ce6f7d258c920c384358a` | `LICENSE-APACHE` (A013), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A006), `LICENSE-MIT` (A005) |
-| [`wit-bindgen-rust`](https://crates.io/crates/wit-bindgen-rust/0.44.0) | `0.44.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `95d164b3b6fbd2b0dd8b639b1012110c0bc256519a0a6def410d4020fa8ae106` | `LICENSE-APACHE` (A013), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A006), `LICENSE-MIT` (A005) |
-| [`wit-bindgen-rust-macro`](https://crates.io/crates/wit-bindgen-rust-macro/0.44.0) | `0.44.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `2c9100a5e1ac85e526dcd4ef49c3ff7689e026fa5e56e2a2047fd377fc682e02` | `LICENSE-APACHE` (A013), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A006), `LICENSE-MIT` (A005) |
-| [`wit-component`](https://crates.io/crates/wit-component/0.236.1) | `0.236.1` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `3622959ed7ed6341c38e5aa35af243632534b0a36226852faa802939ce11e00f` | None in archive; see bundled P001/P002 terms |
-| [`wit-parser`](https://crates.io/crates/wit-parser/0.236.1) | `0.236.1` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `16e4833a20cd6e85d6abfea0e63a399472d6f88c6262957c17f546879a80ba15` | None in archive; see bundled P001/P002 terms |
-| [`zmij`](https://crates.io/crates/zmij/1.0.23) | `1.0.23` | `MIT` | `29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b` | `LICENSE-MIT` (A005) |
+| [`anyhow`](https://crates.io/crates/anyhow/1.0.104) | `1.0.104` | `MIT OR Apache-2.0` | `330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`base64`](https://crates.io/crates/base64/0.22.1) | `0.22.1` | `MIT OR Apache-2.0` | `72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6` | `LICENSE-APACHE` (A012), `LICENSE-MIT` (A002) |
+| [`bitflags`](https://crates.io/crates/bitflags/2.13.1) | `2.13.1` | `MIT OR Apache-2.0` | `b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da` | `LICENSE-APACHE` (A012), `LICENSE-MIT` (A008) |
+| [`dekopon-capability`](https://crates.io/crates/dekopon-capability/0.13.0) | `0.13.0` | `MIT OR Apache-2.0` | `a42301934fb6650c6cdd9fcabadcddb65fb82c9dd1baeb29c15e6783c91292fe` | None in archive; see bundled P001/P002 terms |
+| [`dekopon-core`](https://crates.io/crates/dekopon-core/0.13.0) | `0.13.0` | `MIT OR Apache-2.0` | `ab993c8d4b1f440c63dfdb00275bdfbc30fd51ae650035624666e807be06f016` | None in archive; see bundled P001/P002 terms |
+| [`dekopon-provider-http`](https://crates.io/crates/dekopon-provider-http/0.13.0) | `0.13.0` | `MIT OR Apache-2.0` | `fa7a91a2fd2ed0e426d331719b3e205a1b989de48bcb9bd20f00adbf02357163` | None in archive; see bundled P001/P002 terms |
+| [`dekopon-provider-sdk`](https://crates.io/crates/dekopon-provider-sdk/0.13.0) | `0.13.0` | `MIT OR Apache-2.0` | `3744dadb6220a9c0f50ce2ee58ef709d0141b3a1faa4e7bda9ca8beab6e2399b` | None in archive; see bundled P001/P002 terms |
+| [`equivalent`](https://crates.io/crates/equivalent/1.0.2) | `1.0.2` | `Apache-2.0 OR MIT` | `877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f` | `LICENSE-APACHE` (A012), `LICENSE-MIT` (A009) |
+| [`foldhash`](https://crates.io/crates/foldhash/0.2.0) | `0.2.0` | `Zlib` | `77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb` | `LICENSE` (A013) |
+| [`hashbrown`](https://crates.io/crates/hashbrown/0.17.1) | `0.17.1` | `MIT OR Apache-2.0` | `ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a` | `LICENSE-APACHE` (A012), `LICENSE-MIT` (A016) |
+| [`heck`](https://crates.io/crates/heck/0.5.0) | `0.5.0` | `MIT OR Apache-2.0` | `2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea` | `LICENSE-APACHE` (A012), `LICENSE-MIT` (A010) |
+| [`id-arena`](https://crates.io/crates/id-arena/2.3.0) | `2.3.0` | `MIT/Apache-2.0` | `3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954` | `LICENSE-APACHE` (A012), `LICENSE-MIT` (A006) |
+| [`indexmap`](https://crates.io/crates/indexmap/2.14.0) | `2.14.0` | `Apache-2.0 OR MIT` | `d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9` | `LICENSE-APACHE` (A012), `LICENSE-MIT` (A014) |
+| [`itoa`](https://crates.io/crates/itoa/1.0.18) | `1.0.18` | `MIT OR Apache-2.0` | `8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`leb128fmt`](https://crates.io/crates/leb128fmt/0.1.0) | `0.1.0` | `MIT OR Apache-2.0` | `09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2` | `LICENSE-APACHE` (A012), `LICENSE-MIT` (A004) |
+| [`log`](https://crates.io/crates/log/0.4.34) | `0.4.34` | `MIT OR Apache-2.0` | `f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6` | `LICENSE-APACHE` (A012), `LICENSE-MIT` (A008) |
+| [`memchr`](https://crates.io/crates/memchr/2.8.3) | `2.8.3` | `Unlicense OR MIT` | `cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98` | `COPYING` (A001), `LICENSE-MIT` (A003), `UNLICENSE` (A011) |
+| [`prettyplease`](https://crates.io/crates/prettyplease/0.3.0) | `0.3.0` | `MIT OR Apache-2.0` | `2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`proc-macro2`](https://crates.io/crates/proc-macro2/1.0.107) | `1.0.107` | `MIT OR Apache-2.0` | `985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`quote`](https://crates.io/crates/quote/1.0.47) | `1.0.47` | `MIT OR Apache-2.0` | `1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`semver`](https://crates.io/crates/semver/1.0.28) | `1.0.28` | `MIT OR Apache-2.0` | `8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`serde`](https://crates.io/crates/serde/1.0.229) | `1.0.229` | `MIT OR Apache-2.0` | `4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`serde_core`](https://crates.io/crates/serde_core/1.0.229) | `1.0.229` | `MIT OR Apache-2.0` | `67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`serde_derive`](https://crates.io/crates/serde_derive/1.0.229) | `1.0.229` | `MIT OR Apache-2.0` | `e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`serde_json`](https://crates.io/crates/serde_json/1.0.151) | `1.0.151` | `MIT OR Apache-2.0` | `c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`syn`](https://crates.io/crates/syn/3.0.5) | `3.0.5` | `MIT OR Apache-2.0` | `12df2e0110f65b775f769bb17ef989067a1d931b2eb822bd4346631eeada89f9` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`thiserror`](https://crates.io/crates/thiserror/2.0.20) | `2.0.20` | `MIT OR Apache-2.0` | `ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`thiserror-impl`](https://crates.io/crates/thiserror-impl/2.0.20) | `2.0.20` | `MIT OR Apache-2.0` | `bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004) |
+| [`unicode-ident`](https://crates.io/crates/unicode-ident/1.0.24) | `1.0.24` | `(MIT OR Apache-2.0) AND Unicode-3.0` | `e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75` | `LICENSE-APACHE` (A007), `LICENSE-MIT` (A004), `LICENSE-UNICODE` (A015) |
+| [`wasm-encoder`](https://crates.io/crates/wasm-encoder/0.259.0) | `0.259.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `b1d0246511d901aacf25d2dc9111f0054947de5e093fe662099e709ff7530dc3` | `LICENSE-APACHE` (A012), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A005), `LICENSE-MIT` (A004) |
+| [`wasm-metadata`](https://crates.io/crates/wasm-metadata/0.259.0) | `0.259.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `4e7bf119eb01f4a246864c10bd87c8f26c566350abb25aa4d5273c415bbab338` | `LICENSE-APACHE` (A012), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A005), `LICENSE-MIT` (A004) |
+| [`wasmparser`](https://crates.io/crates/wasmparser/0.259.0) | `0.259.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `0f7c12eac7bb587801590f6a67ff0bc84d0748513864b71108e4b311cc3df694` | `LICENSE-APACHE` (A012), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A005), `LICENSE-MIT` (A004) |
+| [`wit-bindgen`](https://crates.io/crates/wit-bindgen/0.62.0) | `0.62.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `53cb4b5556c3a791e86838ea287782bdafa704d55b0e68b5b81a3a16b9ea5f4b` | `LICENSE-APACHE` (A012), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A005), `LICENSE-MIT` (A004) |
+| [`wit-bindgen-core`](https://crates.io/crates/wit-bindgen-core/0.62.0) | `0.62.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `72ad22a37ecbc0e1fdca34d2b670ba41368cb0920735643e00fdf39a16ee5431` | `LICENSE-APACHE` (A012), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A005), `LICENSE-MIT` (A004) |
+| [`wit-bindgen-rust`](https://crates.io/crates/wit-bindgen-rust/0.62.0) | `0.62.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `84ba5213d4332c260a0d4e69e34b0f7e4b85ddae10b6ebfbac00d9c185ba628a` | `LICENSE-APACHE` (A012), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A005), `LICENSE-MIT` (A004) |
+| [`wit-bindgen-rust-macro`](https://crates.io/crates/wit-bindgen-rust-macro/0.62.0) | `0.62.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `8f19d63da8e478a370ef8192d90ccb517965b7747d6b46cd2d831dd0ef4d2541` | `LICENSE-APACHE` (A012), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A005), `LICENSE-MIT` (A004) |
+| [`wit-component`](https://crates.io/crates/wit-component/0.259.0) | `0.259.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `092f783dee3253265fcde131475055f8c275ac0176a9c0396db1dc7b5544bfb4` | `LICENSE-APACHE` (A012), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A005), `LICENSE-MIT` (A004) |
+| [`wit-parser`](https://crates.io/crates/wit-parser/0.259.0) | `0.259.0` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | `6390f4f02493ce678d509c859cf1698e38929fb75c8012a6ee2f7d6b6cb66cd7` | `LICENSE-APACHE` (A012), `LICENSE-Apache-2.0_WITH_LLVM-exception` (A005), `LICENSE-MIT` (A004) |
+| [`zmij`](https://crates.io/crates/zmij/1.0.23) | `1.0.23` | `MIT` | `29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b` | `LICENSE-MIT` (A004) |
 
 ## Provider license terms
 
@@ -352,19 +348,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### A004 — SHA-256 `23860c2a7b5d96b21569afedf033469bab9fe14a1b24a35068b8641c578ce24d`; supplied by unicode-xid 0.2.6/COPYRIGHT
-
-```text
-Licensed under the Apache License, Version 2.0
-<LICENSE-APACHE or
-http://www.apache.org/licenses/LICENSE-2.0> or the MIT
-license <LICENSE-MIT or http://opensource.org/licenses/MIT>,
-at your option. All files in the project carrying such
-notice may not be copied, modified, or distributed except
-according to those terms.
-```
-
-### A005 — SHA-256 `23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3`; supplied by anyhow 1.0.104/LICENSE-MIT; itoa 1.0.18/LICENSE-MIT; leb128fmt 0.1.0/LICENSE-MIT; prettyplease 0.2.37/LICENSE-MIT; proc-macro2 1.0.107/LICENSE-MIT; quote 1.0.47/LICENSE-MIT; semver 1.0.28/LICENSE-MIT; serde 1.0.229/LICENSE-MIT; serde_core 1.0.229/LICENSE-MIT; serde_derive 1.0.229/LICENSE-MIT; serde_json 1.0.151/LICENSE-MIT; syn 2.0.119/LICENSE-MIT; syn 3.0.4/LICENSE-MIT; thiserror 2.0.20/LICENSE-MIT; thiserror-impl 2.0.20/LICENSE-MIT; unicode-ident 1.0.24/LICENSE-MIT; wit-bindgen 0.44.0/LICENSE-MIT; wit-bindgen-core 0.44.0/LICENSE-MIT; wit-bindgen-rt 0.44.0/LICENSE-MIT; wit-bindgen-rust 0.44.0/LICENSE-MIT; wit-bindgen-rust-macro 0.44.0/LICENSE-MIT; zmij 1.0.23/LICENSE-MIT
+### A004 — SHA-256 `23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3`; supplied by anyhow 1.0.104/LICENSE-MIT; itoa 1.0.18/LICENSE-MIT; leb128fmt 0.1.0/LICENSE-MIT; prettyplease 0.3.0/LICENSE-MIT; proc-macro2 1.0.107/LICENSE-MIT; quote 1.0.47/LICENSE-MIT; semver 1.0.28/LICENSE-MIT; serde 1.0.229/LICENSE-MIT; serde_core 1.0.229/LICENSE-MIT; serde_derive 1.0.229/LICENSE-MIT; serde_json 1.0.151/LICENSE-MIT; syn 3.0.5/LICENSE-MIT; thiserror 2.0.20/LICENSE-MIT; thiserror-impl 2.0.20/LICENSE-MIT; unicode-ident 1.0.24/LICENSE-MIT; wasm-encoder 0.259.0/LICENSE-MIT; wasm-metadata 0.259.0/LICENSE-MIT; wasmparser 0.259.0/LICENSE-MIT; wit-bindgen 0.62.0/LICENSE-MIT; wit-bindgen-core 0.62.0/LICENSE-MIT; wit-bindgen-rust 0.62.0/LICENSE-MIT; wit-bindgen-rust-macro 0.62.0/LICENSE-MIT; wit-component 0.259.0/LICENSE-MIT; wit-parser 0.259.0/LICENSE-MIT; zmij 1.0.23/LICENSE-MIT
 
 ```text
 Permission is hereby granted, free of charge, to any
@@ -392,7 +376,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### A006 — SHA-256 `268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5`; supplied by wit-bindgen 0.44.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wit-bindgen-core 0.44.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wit-bindgen-rt 0.44.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wit-bindgen-rust 0.44.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wit-bindgen-rust-macro 0.44.0/LICENSE-Apache-2.0_WITH_LLVM-exception
+### A005 — SHA-256 `268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5`; supplied by wasm-encoder 0.259.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wasm-metadata 0.259.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wasmparser 0.259.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wit-bindgen 0.62.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wit-bindgen-core 0.62.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wit-bindgen-rust 0.62.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wit-bindgen-rust-macro 0.62.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wit-component 0.259.0/LICENSE-Apache-2.0_WITH_LLVM-exception; wit-parser 0.259.0/LICENSE-Apache-2.0_WITH_LLVM-exception
 
 ```text
 
@@ -617,7 +601,7 @@ Software.
 
 ```
 
-### A007 — SHA-256 `378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397`; supplied by id-arena 2.3.0/LICENSE-MIT
+### A006 — SHA-256 `378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397`; supplied by id-arena 2.3.0/LICENSE-MIT
 
 ```text
 Copyright (c) 2014 Alex Crichton
@@ -647,7 +631,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### A008 — SHA-256 `62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a`; supplied by anyhow 1.0.104/LICENSE-APACHE; itoa 1.0.18/LICENSE-APACHE; prettyplease 0.2.37/LICENSE-APACHE; proc-macro2 1.0.107/LICENSE-APACHE; quote 1.0.47/LICENSE-APACHE; semver 1.0.28/LICENSE-APACHE; serde 1.0.229/LICENSE-APACHE; serde_core 1.0.229/LICENSE-APACHE; serde_derive 1.0.229/LICENSE-APACHE; serde_json 1.0.151/LICENSE-APACHE; syn 2.0.119/LICENSE-APACHE; syn 3.0.4/LICENSE-APACHE; thiserror 2.0.20/LICENSE-APACHE; thiserror-impl 2.0.20/LICENSE-APACHE; unicode-ident 1.0.24/LICENSE-APACHE
+### A007 — SHA-256 `62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a`; supplied by anyhow 1.0.104/LICENSE-APACHE; itoa 1.0.18/LICENSE-APACHE; prettyplease 0.3.0/LICENSE-APACHE; proc-macro2 1.0.107/LICENSE-APACHE; quote 1.0.47/LICENSE-APACHE; semver 1.0.28/LICENSE-APACHE; serde 1.0.229/LICENSE-APACHE; serde_core 1.0.229/LICENSE-APACHE; serde_derive 1.0.229/LICENSE-APACHE; serde_json 1.0.151/LICENSE-APACHE; syn 3.0.5/LICENSE-APACHE; thiserror 2.0.20/LICENSE-APACHE; thiserror-impl 2.0.20/LICENSE-APACHE; unicode-ident 1.0.24/LICENSE-APACHE
 
 ```text
                               Apache License
@@ -828,7 +812,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 END OF TERMS AND CONDITIONS
 ```
 
-### A009 — SHA-256 `6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb`; supplied by bitflags 2.13.1/LICENSE-MIT; log 0.4.34/LICENSE-MIT
+### A008 — SHA-256 `6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb`; supplied by bitflags 2.13.1/LICENSE-MIT; log 0.4.34/LICENSE-MIT
 
 ```text
 Copyright (c) 2014 The Rust Project Developers
@@ -858,7 +842,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### A010 — SHA-256 `7365cc8878a1d7ce155a58c4ca09c3d7a6be413efa5334a80ea842912b669349`; supplied by equivalent 1.0.2/LICENSE-MIT
+### A009 — SHA-256 `7365cc8878a1d7ce155a58c4ca09c3d7a6be413efa5334a80ea842912b669349`; supplied by equivalent 1.0.2/LICENSE-MIT
 
 ```text
 Copyright (c) 2016--2023
@@ -888,7 +872,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### A011 — SHA-256 `7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0`; supplied by heck 0.5.0/LICENSE-MIT; unicode-xid 0.2.6/LICENSE-MIT
+### A010 — SHA-256 `7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0`; supplied by heck 0.5.0/LICENSE-MIT
 
 ```text
 Copyright (c) 2015 The Rust Project Developers
@@ -918,7 +902,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### A012 — SHA-256 `7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c`; supplied by memchr 2.8.3/UNLICENSE
+### A011 — SHA-256 `7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c`; supplied by memchr 2.8.3/UNLICENSE
 
 ```text
 This is free and unencumbered software released into the public domain.
@@ -947,7 +931,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org/>
 ```
 
-### A013 — SHA-256 `a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2`; supplied by base64 0.22.1/LICENSE-APACHE; bitflags 2.13.1/LICENSE-APACHE; equivalent 1.0.2/LICENSE-APACHE; hashbrown 0.15.5/LICENSE-APACHE; hashbrown 0.17.1/LICENSE-APACHE; heck 0.5.0/LICENSE-APACHE; id-arena 2.3.0/LICENSE-APACHE; indexmap 2.14.0/LICENSE-APACHE; leb128fmt 0.1.0/LICENSE-APACHE; log 0.4.34/LICENSE-APACHE; unicode-xid 0.2.6/LICENSE-APACHE; wit-bindgen 0.44.0/LICENSE-APACHE; wit-bindgen-core 0.44.0/LICENSE-APACHE; wit-bindgen-rt 0.44.0/LICENSE-APACHE; wit-bindgen-rust 0.44.0/LICENSE-APACHE; wit-bindgen-rust-macro 0.44.0/LICENSE-APACHE
+### A012 — SHA-256 `a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2`; supplied by base64 0.22.1/LICENSE-APACHE; bitflags 2.13.1/LICENSE-APACHE; equivalent 1.0.2/LICENSE-APACHE; hashbrown 0.17.1/LICENSE-APACHE; heck 0.5.0/LICENSE-APACHE; id-arena 2.3.0/LICENSE-APACHE; indexmap 2.14.0/LICENSE-APACHE; leb128fmt 0.1.0/LICENSE-APACHE; log 0.4.34/LICENSE-APACHE; wasm-encoder 0.259.0/LICENSE-APACHE; wasm-metadata 0.259.0/LICENSE-APACHE; wasmparser 0.259.0/LICENSE-APACHE; wit-bindgen 0.62.0/LICENSE-APACHE; wit-bindgen-core 0.62.0/LICENSE-APACHE; wit-bindgen-rust 0.62.0/LICENSE-APACHE; wit-bindgen-rust-macro 0.62.0/LICENSE-APACHE; wit-component 0.259.0/LICENSE-APACHE; wit-parser 0.259.0/LICENSE-APACHE
 
 ```text
                               Apache License
@@ -1153,7 +1137,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### A014 — SHA-256 `b1181a40b2a7b25cf66fd01481713bc1005df082c53ef73e851e55071b102744`; supplied by foldhash 0.1.5/LICENSE
+### A013 — SHA-256 `b1181a40b2a7b25cf66fd01481713bc1005df082c53ef73e851e55071b102744`; supplied by foldhash 0.2.0/LICENSE
 
 ```text
 Copyright (c) 2024 Orson Peters
@@ -1177,7 +1161,7 @@ the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### A015 — SHA-256 `ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055`; supplied by indexmap 2.14.0/LICENSE-MIT
+### A014 — SHA-256 `ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055`; supplied by indexmap 2.14.0/LICENSE-MIT
 
 ```text
 Copyright (c) 2016--2017
@@ -1207,7 +1191,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### A016 — SHA-256 `f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1`; supplied by unicode-ident 1.0.24/LICENSE-UNICODE
+### A015 — SHA-256 `f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1`; supplied by unicode-ident 1.0.24/LICENSE-UNICODE
 
 ```text
 UNICODE LICENSE V3
@@ -1251,7 +1235,7 @@ dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
 ```
 
-### A017 — SHA-256 `ff8f68cb076caf8cefe7a6430d4ac086ce6af2ca8ce2c4e5a2004d4552ef52a2`; supplied by hashbrown 0.15.5/LICENSE-MIT; hashbrown 0.17.1/LICENSE-MIT
+### A016 — SHA-256 `ff8f68cb076caf8cefe7a6430d4ac086ce6af2ca8ce2c4e5a2004d4552ef52a2`; supplied by hashbrown 0.17.1/LICENSE-MIT
 
 ```text
 Copyright (c) 2016 Amanieu d'Antras

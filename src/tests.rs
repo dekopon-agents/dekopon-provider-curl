@@ -3,7 +3,7 @@ use std::cell::Cell;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use dekopon_core::{CommandWordConflictKind, command_word_conflicts};
 use dekopon_provider_http::{Header, HttpError, HttpErrorCode, Request, Response};
-use dekopon_provider_sdk::{CapabilityId, ComponentResponse, EffectKind, Idempotency, Provider};
+use dekopon_provider_sdk::{CapabilityId, ComponentResponse, EffectKind, Provider};
 use serde_json::{Value, json};
 
 use super::{
@@ -69,7 +69,6 @@ fn manifest_is_the_exact_single_capability_contract() {
     );
     assert_eq!(declared.effect, EffectKind::ReadOnly);
     assert_eq!(declared.risk.to_string(), "Medium");
-    assert_eq!(declared.idempotency, Idempotency::Idempotent);
     assert_eq!(declared.input_schema, input_schema());
     assert_eq!(
         serde_json::to_value(manifest).expect("manifest serializes")["apiVersion"],

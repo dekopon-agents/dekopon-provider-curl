@@ -15,14 +15,14 @@ The release component is tested with these independent broker-host ceilings:
 the component through request handling, response copying, base64, optional projections, complete
 envelope sizing, and host evidence under the fixed ceilings.
 
-With the pinned v0.1.0 release component, Rust 1.97.0, wasm-tools 1.236.1, and Dekopon/Wasmtime
-0.11.1/36.0.14, the measurement made on 2026-08-24 was:
+The test loads the broker host with `fuel` and `max_memory_bytes` set to exactly the numbers above
+rather than the host's 8-billion/64 MiB defaults, so the gate is the run itself: a regression that
+crosses either ceiling traps and fails the invocation before a tag can be released.
 
-- **43,196,521 fuel units** for the stressed invocation;
-- **3,670,016 bytes** as the largest observed guest-memory request;
-- zero denied memory-growth requests.
-
-The committed 64 million fuel gate leaves deterministic headroom without falling back to the
-broker host's 8 billion default. CI reruns the stressed invocation; a regression that crosses either
-fixed gate fails before a tag can be released. Fuel is a Wasm execution budget, not a latency SLA;
-the independent supported timeout remains 10 seconds.
+The measurement made on 2026-08-24 against the v0.1.0 component (Rust 1.97.0, wasm-tools 1.236.1,
+Dekopon/Wasmtime 0.11.1/36.0.14) was 43,196,521 fuel units, a largest guest-memory request of
+3,670,016 bytes, and zero denied memory-growth requests. Dekopon 0.13.0 removed
+`BrokerProviderRegistry::metrics`, so those counters are no longer readable from a test and the
+numbers are not reproduced per run; the committed 64-million fuel gate keeps the headroom that
+measurement established. Fuel is a Wasm execution budget, not a latency SLA; the independent
+supported timeout remains 10 seconds.

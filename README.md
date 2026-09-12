@@ -1,14 +1,14 @@
 # dekopon-provider-curl
 
 A production-bounded, unauthenticated HTTP GET provider for
-[Dekopon](https://github.com/dekopon-agents/dekopon) 0.11.1.
+[Dekopon](https://github.com/dekopon-agents/dekopon) 0.13.0.
 
 | Manifest field | Value |
 |---|---|
 | Provider | `curl` |
 | Capability | `curl.get` |
 | Command word | `curlget` |
-| Effect / risk / idempotency | `read-only` / `Medium` / `idempotent` |
+| Effect / risk | `read-only` / `Medium` |
 
 `Medium` is deliberate: the caller controls the complete path/query, fetched content can be
 sensitive or adversarial, and broken upstreams can make GET stateful.
@@ -16,16 +16,16 @@ sensitive or adversarial, and broken upstreams can make GET stateful.
 ## Broker-only execution
 
 The component imports **exactly** `dekopon:http/client@1.0.0` and exports `describe`, `invoke`, and
-`resolve-command`. It imports no WASI or other interface and contains no HTTP stack. Only a separate
+`run-command`. It imports no WASI or other interface and contains no HTTP stack. Only a separate
 Dekopon broker links the import and supplies authorization, canonical URL handling, DNS validation
 and pinning, streaming limits, and transport.
 
-Direct `dekopon-run inspect`, direct `invoke`, direct `shell`, and an empty Wasmtime linker must
-refuse the component. That is expected—not an installation error. Configure the component in
+Any host that does not link that import—an empty Wasmtime linker, or any direct non-broker
+host—refuses the component. That is expected, not an installation error. Configure the component in
 `dekopon-brokerd`, an exact constraint set, and a separate Cedar grant. See
 [`examples/broker.yaml`](examples/broker.yaml) and [`examples/policies.cedar`](examples/policies.cedar).
 
-Supported v0.1.0 constraints are:
+Supported v0.2.0 constraints are:
 
 ```yaml
 constraintSets:
@@ -33,7 +33,6 @@ constraintSets:
     provider: curl
     effect: read-only
     risk: Medium
-    idempotency: idempotent
     constraints:
       timeoutMs: 10000
       maxOutputBytes: 524288
@@ -46,7 +45,7 @@ constraintSets:
         allowPlaintextLoopback: false
 ```
 
-There must be no `credential` or `credentialByAgent`. These bounds sit below Dekopon 0.11.1 host
+There must be no `credential` or `credentialByAgent`. These bounds sit below Dekopon 0.13.0 host
 defaults (30 seconds, 64 MiB Wasm memory, 1 MiB input/output, 32 calls, 1 MiB request, 4 MiB
 response, 128 headers, and 64 KiB header bytes).
 
@@ -56,12 +55,8 @@ response, 128 headers, and 64 KiB header bytes).
    registry rejects a provider claiming it. `curlget` is separator-free and unreserved. `curl-get`
    is capability-shaped and also invalid. The reserved builtin remains available in broker mode:
 
-   ```console
-   dekopon-run prompt --broker --curl-capability curl.get ...
-   ```
-
-   Its broader parser can propose methods or bodies; this provider still rejects anything except a
-   bodyless GET.
+   The reserved builtin's broader parser can propose methods or bodies; this provider still
+   rejects anything except a bodyless GET.
 2. **Cedar cannot inspect URI path or query.** Granting `curl.get` for an authority grants every
    otherwise-permitted GET path/query on that authority. Use a dedicated authority when that is too
    broad.
@@ -95,7 +90,7 @@ only caller names are:
 - `if-none-match`
 - `range`
 
-The provider appends `user-agent: dekopon-provider-curl/0.1.0`. It sends one `GET`, an empty body,
+The provider appends `user-agent: dekopon-provider-curl/<crate version>`. It sends one `GET`, an empty body,
 ordered caller headers (including duplicates), then that User-Agent. It never retries.
 
 URIs are at most 4,096 UTF-8 bytes with no ASCII whitespace/control, backslash, or fragment. They
@@ -136,37 +131,52 @@ prompt-inject a model.
 
 ## Command word
 
-`resolve-command` is a pure parser; Dekopon links imports into a disabled resolution context and
-fails resolution if an import is touched. `argv` excludes `curlget`:
+`run-command` is a pure parser; Dekopon links imports into a disabled resolution context and fails
+the run if an import is touched. `argv` excludes `curlget`:
 
 ```text
 curlget [-s|-S|<short bundle containing only s/S>]
         [--silent|--show-error]
         [-X GET|--request GET]
         [-H "Name: value"|--header "Name: value"]...
+        [-H @-|--header @-]
         URL
+curlget -h|--help
 ```
 
 Quiet flags are documented no-ops because structured execution has no progress meter. Method values
 are separate, case-insensitive `GET`, normalized uppercase, and may appear once. Headers are
 separate values, split at the first colon, trimmed around name/value, and preserve later colons,
 order, and duplicates. Exactly one URL, at most 70 argv entries, at most 24,576 aggregate UTF-8
-bytes, and at most 32 headers are accepted. Attached values, `--flag=value`, and every unlisted
-option produce exactly:
+bytes across argv **and** the piped value, and at most 32 headers are accepted.
+
+`-H @-` reads headers from the piped value, one `Name: value` per line, blank lines skipped, in
+place of one argv header. That is upstream curl's `@-` spelling, and it is the only stdin this
+provider has a use for: `curl.get` is bodyless by construction, so `-d @-` has nothing to fill. The
+pipe is read once; a second `@-`, or `@-` with nothing piped, is a usage error. Piped input reaches
+the parser unauthorized, exactly as argv does, and produces a proposal that is authorized on the
+ordinary path.
+
+`-h`/`--help` renders a help page on standard output at status 0. Attached values, `--flag=value`,
+`@file` for any file other than `-`, and every unlisted option render on standard error at status 2:
 
 ```text
-usage: curlget [-sS] [-X GET] [-H "Name: value"]... URL
+usage: curlget [-sS] [-X GET] [-H "Name: value"|-H @-]... URL
+try 'curlget --help'
 ```
+
+Rendered text is produced by the guest before authorization and grants nothing.
 
 ## Explicit non-goals
 
-v0.1.0 is not general curl and intentionally provides none of the following:
+This provider is not general curl and intentionally provides none of the following:
 
-- methods other than GET, HEAD, `-G`, request bodies, data, forms, or uploads;
+- methods other than GET, HEAD, `-G`, request bodies, data, forms, or uploads (so no `-d @-`);
 - redirects, fail-on-status, retries, retry timing, or follow-up calls;
 - authentication, generic credential injection, bearer/basic auth, cookies, or token fields;
 - proxies or environment proxy inheritance;
-- output files, file input, config files, filesystem access, subprocesses, or libcurl;
+- output files, `@file` input from anything but the pipe, config files, filesystem access,
+  subprocesses, or libcurl;
 - compression negotiation, decompression, content decoding, or archive handling;
 - TLS bypass, custom CA/client certificates, or plaintext non-loopback HTTP;
 - caller-controlled Host, User-Agent, authorization, hop-by-hop, or arbitrary extension headers;
@@ -182,26 +192,24 @@ credential in its response.
 
 ## Build and acceptance
 
-Release bytes use Rust 1.97.0 and wasm-tools 1.236.1; MSRV is Rust 1.89.0. `build.sh` only targets
+Release bytes use Rust 1.98.1 and wasm-tools 1.259.0, which is also the MSRV. `build.sh` only targets
 `wasm32-unknown-unknown`, normalizes crate metadata, remaps source/Cargo/sysroot paths, embeds the
 exact deterministic notices in `dekopon.third-party-notices`, componentizes, validates, enforces
-512 KiB, and writes a checksum. The inventory and SBOM resolve an isolated 43-crate normal/build
+512 KiB, and writes a checksum. The inventory and SBOM resolve an isolated 39-crate normal/build
 graph so native dev features cannot leak into shipped evidence. `wasm32-wasip2` is forbidden.
 
 ```console
-rustup toolchain install 1.89.0 --profile minimal --component clippy --component rustfmt
-rustup toolchain install 1.97.0 --profile minimal
-rustup target add wasm32-unknown-unknown --toolchain 1.89.0
-rustup target add wasm32-unknown-unknown --toolchain 1.97.0
-cargo install wasm-tools --version 1.236.1 --locked
-cargo install wasmtime-cli --version 48.0.0 --locked
+rustup toolchain install 1.98.1 --profile minimal --component clippy --component rustfmt
+rustup target add wasm32-unknown-unknown --toolchain 1.98.1
+cargo install wasm-tools --version 1.259.0 --locked
+cargo install wasmtime-cli --version 48.0.2 --locked
 cargo install cargo-deny --version 0.20.2 --locked
 cargo install cargo-cyclonedx --version 0.5.9 --locked
 
-cargo +1.89.0 fmt --all -- --check
-cargo +1.89.0 clippy --locked --all-targets -- -D warnings
-cargo +1.89.0 test --locked --lib
-cargo +1.89.0 check --locked --target wasm32-unknown-unknown
+cargo +1.98.1 fmt --all -- --check
+cargo +1.98.1 clippy --locked --all-targets -- -D warnings
+cargo +1.98.1 test --locked --lib
+cargo +1.98.1 check --locked --target wasm32-unknown-unknown
 cargo deny --locked check advisories licenses bans sources
 ./scripts/dependency_inventory.py check-sources
 ./scripts/dependency_inventory.py inventory --output /tmp/curl-dependencies.txt
@@ -213,7 +221,7 @@ actionlint .github/workflows/*.yml
 zizmor --pedantic .github/workflows/*.yml
 ./build.sh
 ./scripts/verify-component.sh
-cargo +1.97.0 test --locked --test broker_host
+cargo +1.98.1 test --locked --test broker_host
 ./scripts/test-direct-refusal.sh
 ./scripts/generate-sbom.sh dist/curl-provider.cdx.json
 ./scripts/check-reproducible.sh
@@ -228,10 +236,10 @@ gates and [`RELEASE.md`](RELEASE.md) for the tag-only release process.
 
 ## Distribution and license
 
-The eventual `v0.1.0` tag publishes exactly two GitHub assets (`curl-provider.wasm` and its
-`.sha256`), provenance and CycloneDX SBOM attestations, and one public one-layer OCI artifact at
-`ghcr.io/dekopon-agents/provider-curl:0.1.0`. It does not publish to crates.io or create `latest`.
-No repository, tag, release, or package is created by the implementation step itself.
+Each `v<version>` tag publishes exactly two GitHub assets (`curl-provider.wasm` and its `.sha256`),
+provenance and CycloneDX SBOM attestations, and one public one-layer OCI artifact at
+`ghcr.io/dekopon-agents/provider-curl:<version>`. It does not publish to crates.io or create
+`latest`. No repository, tag, release, or package is created by the implementation step itself.
 
 The provider is MIT OR Apache-2.0, at your option. See `LICENSE-MIT`, `LICENSE-APACHE`, and the
 embedded deterministic `THIRD_PARTY_NOTICES.md`. That self-contained bundle verifies exact

@@ -1,11 +1,10 @@
-# Supported v0.1.0 constraint profile. Replace the authority with an exact operator-selected
+# Supported v0.2.0 constraint profile. Replace the authority with an exact operator-selected
 # HTTPS authority. A separate Cedar statement must authorize each caller.
 constraintSets:
   curl.get:
     provider: curl
     effect: read-only
     risk: Medium
-    idempotency: idempotent
     constraints:
       timeoutMs: 10000
       maxOutputBytes: 524288
