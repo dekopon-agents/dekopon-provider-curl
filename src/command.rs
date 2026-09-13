@@ -1,7 +1,7 @@
-//! Pure command-line front end for the provider-owned `curlget` word.
+//! Pure command-line front end for the provider-owned `curl` word.
 
-use dekopon_provider_sdk::CommandRun;
-use serde_json::{Map, Value};
+use dekopon_provider_sdk::{CommandInvocation, CommandRun, SecretDrn, SecretUseProposal};
+use serde_json::{Map, Value, json};
 
 use crate::{CAPABILITY, MAX_REQUEST_HEADERS};
 
@@ -15,38 +15,55 @@ pub(crate) const MAX_INPUT_BYTES: usize = 24_576;
 const STDIN_HEADERS: &str = "@-";
 
 pub(crate) const USAGE: &str = "\
-usage: curlget [-sS] [-X GET] [-H \"Name: value\"|-H @-]... URL
-try 'curlget --help'
+usage: curl [-sS] [-X GET] [-H \"Name: value\"|-H @-]...
+            [--oauth2-bearer DRN|-u USER:DRN] URL
+try 'curl --help'
 ";
 
 pub(crate) const HELP: &str = "\
-curlget: one bounded, broker-authorized, bodyless HTTP GET.
+curl: one bounded, broker-authorized, bodyless HTTP GET.
 
-Usage: curlget [options...] URL
+Usage: curl [options...] URL
 
-  -H, --header <line>   Add one request header, spelled \"Name: value\"
-  -H, --header @-       Read request headers from stdin, one per line
-  -X, --request GET     Request method; only GET is accepted
-  -s, --silent          Accepted and ignored; there is no progress meter
-  -S, --show-error      Accepted and ignored
-  -h, --help            Print this help page
+  -H, --header <line>    Add one request header, spelled \"Name: value\"
+  -H, --header @-        Read request headers from stdin, one per line
+  -X, --request GET      Request method; only GET is accepted
+      --oauth2-bearer <drn>
+                         Propose sending this secret DRN as a Bearer token
+  -u, --user <user>:<drn>
+                         Propose this username and secret DRN as Basic credentials
+  -s, --silent           Accepted and ignored; there is no progress meter
+  -S, --show-error       Accepted and ignored
+  -h, --help             Print this help page
 
 URL must be HTTPS, or a literal loopback HTTP URL with an explicit port. Header names
 are limited to the allowlist: accept, accept-language, cache-control,
 if-modified-since, if-none-match, range.
 
+A credential flag takes a bare public DRN, drn:<authority>:secret:<realm>:<path>, and
+proposes its use; at most one of the two, once. The broker authorizes that use against
+its own policy and the owner's binding, then renders the Authorization header itself.
+Neither flag reaches the request this command proposes, and no secret ever reaches this
+command.
+
 The broker owns DNS, TLS, timeouts, and response limits. Redirects are returned as
 data rather than followed, every status is data, and nothing is retried.
 ";
 
-const NO_STDIN: &str = "curlget: -H @-: nothing was piped in\n";
-const STDIN_ALREADY_READ: &str = "curlget: -H @-: the piped value is read once\n";
+const NO_STDIN: &str = "curl: -H @-: nothing was piped in\n";
+const STDIN_ALREADY_READ: &str = "curl: -H @-: the piped value is read once\n";
+const CREDENTIAL_ONCE: &str = "curl: at most one of --oauth2-bearer and -u, at most once\n";
+const BEARER_NOT_A_DRN: &str =
+    "curl: --oauth2-bearer: value must be a bare DRN, drn:<authority>:secret:<realm>:<path>\n";
+const USER_MALFORMED: &str =
+    "curl: -u: value must be spelled <username>:<drn> with a bounded, control-free username\n";
+const USER_NOT_A_DRN: &str = "curl: -u: value after the username must be a bare DRN, drn:<authority>:secret:<realm>:<path>\n";
 
 /// Runs arguments after the command word as the upstream tool would.
 ///
-/// Dekopon selects `curlget` before entering the component, so `argv` deliberately excludes the
-/// word itself. This performs no host call: a proposal is authorized later on exactly the path a
-/// direct `cap curl.get {…}` call takes, and rendered text grants nothing.
+/// Dekopon selects `curl` before entering the component, so `argv` deliberately excludes the word
+/// itself. This performs no host call: a proposal is authorized later on exactly the path a direct
+/// `cap curl.get {…}` call takes, and rendered text grants nothing.
 pub(crate) fn run(argv: &[String], stdin: Option<&str>) -> CommandRun {
     match parse(argv, stdin) {
         Ok(run) => run,
@@ -71,6 +88,7 @@ fn parse(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, &'static st
     let mut stdin_read = false;
     let mut headers = Vec::new();
     let mut uri = None;
+    let mut secret_use = None;
 
     while index < argv.len() {
         let argument = argv[index].as_str();
@@ -106,6 +124,25 @@ fn parse(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, &'static st
                     push_header(&mut headers, value)?;
                 }
             }
+            "--oauth2-bearer" => {
+                if secret_use.is_some() {
+                    return Err(CREDENTIAL_ONCE);
+                }
+                let value = take_separate(argv, &mut index)?;
+                let secret = drn(value).ok_or(BEARER_NOT_A_DRN)?;
+                secret_use = Some(SecretUseProposal::HttpBearer { secret });
+            }
+            "-u" | "--user" => {
+                if secret_use.is_some() {
+                    return Err(CREDENTIAL_ONCE);
+                }
+                let value = take_separate(argv, &mut index)?;
+                // The username may not itself contain a colon, so the first one is the separator
+                // even though the DRN that follows is full of them.
+                let (username, reference) = value.split_once(':').ok_or(USER_MALFORMED)?;
+                let secret = drn(reference).ok_or(USER_NOT_A_DRN)?;
+                secret_use = Some(basic(secret, username).ok_or(USER_MALFORMED)?);
+            }
             short
                 if short.starts_with('-')
                     && !short.starts_with("--")
@@ -129,12 +166,34 @@ fn parse(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, &'static st
     input.insert("uri".to_owned(), Value::String(uri));
     input.insert("method".to_owned(), Value::String("GET".to_owned()));
     input.insert("headers".to_owned(), Value::Array(headers));
-    Ok(CommandRun::proposal(
-        CAPABILITY
+    Ok(CommandRun::Proposal(CommandInvocation {
+        capability: CAPABILITY
             .parse()
             .expect("static capability identifier is valid"),
-        Value::Object(input),
-    ))
+        input: Value::Object(input),
+        secret_use,
+    }))
+}
+
+/// Parses one credential flag's bare public DRN.
+///
+/// A DRN names a secret; it is not one, and nothing here resolves it. The retired shell builtin's
+/// `${drn:…}` marker is not canonical and is refused with everything else that is not.
+fn drn(value: &str) -> Option<SecretDrn> {
+    value.parse::<SecretDrn>().ok()
+}
+
+/// Builds the Basic proposal through [`SecretUseProposal`]'s own deserializer.
+///
+/// The username rule this command enforces is then the one the broker decodes with rather than a
+/// copy of it that can drift away from it.
+fn basic(secret: SecretDrn, username: &str) -> Option<SecretUseProposal> {
+    serde_json::from_value(json!({
+        "kind": "httpBasic",
+        "secret": secret.as_str(),
+        "username": username,
+    }))
+    .ok()
 }
 
 /// Splits one `Name: value` line at its first colon, preserving later colons and duplicates.
@@ -164,13 +223,16 @@ fn take_separate<'a>(argv: &'a [String], index: &mut usize) -> Result<&'a str, &
 
 #[cfg(test)]
 mod tests {
-    use dekopon_provider_sdk::CommandRun;
+    use dekopon_provider_sdk::{CommandRun, SecretUseProposal};
     use serde_json::json;
 
     use super::{
-        HELP, MAX_ARGV_ENTRIES, MAX_INPUT_BYTES, NO_STDIN, STDIN_ALREADY_READ, USAGE, run,
+        BEARER_NOT_A_DRN, CREDENTIAL_ONCE, HELP, MAX_ARGV_ENTRIES, MAX_INPUT_BYTES, NO_STDIN,
+        STDIN_ALREADY_READ, USAGE, USER_MALFORMED, USER_NOT_A_DRN, run,
     };
     use crate::ALLOWED_HEADERS;
+
+    const DRN: &str = "drn:com.xrl:secret:test:curl/token";
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -181,10 +243,20 @@ mod tests {
     }
 
     fn piped(values: &[&str], stdin: Option<&str>) -> serde_json::Value {
+        let (input, secret_use) = proposed(values, stdin);
+        assert_eq!(secret_use, None, "{values:?} names no secret");
+        input
+    }
+
+    /// The whole proposal an argv produces: the input object and the secret use beside it.
+    fn proposed(
+        values: &[&str],
+        stdin: Option<&str>,
+    ) -> (serde_json::Value, Option<SecretUseProposal>) {
         match run(&strings(values), stdin) {
             CommandRun::Proposal(invocation) => {
                 assert_eq!(invocation.capability.as_str(), "curl.get");
-                invocation.input
+                (invocation.input, invocation.secret_use)
             }
             other => panic!("expected a proposal, got {other:?}"),
         }
@@ -219,11 +291,11 @@ mod tests {
                 "headers": []
             })
         );
-        rejected(&["curlget", "https://example.com/a"]);
+        rejected(&["curl", "https://example.com/a"]);
     }
 
     #[test]
-    fn help_renders_on_stdout_at_zero_and_names_every_allowed_header() {
+    fn help_renders_on_stdout_at_zero_and_names_every_allowed_header_and_credential_flag() {
         for args in [vec!["--help"], vec!["-h"], vec!["-s", "--help", "ignored"]] {
             match run(&strings(&args), None) {
                 CommandRun::Rendered {
@@ -240,6 +312,9 @@ mod tests {
         }
         for allowed in ALLOWED_HEADERS {
             assert!(HELP.contains(allowed), "help omits {allowed}");
+        }
+        for flag in ["--oauth2-bearer", "-u, --user"] {
+            assert!(HELP.contains(flag), "help omits {flag}");
         }
     }
 
@@ -369,7 +444,6 @@ mod tests {
             "--location",
             "--fail",
             "--retry",
-            "--user",
             "--cookie",
             "--proxy",
             "--output",
@@ -377,6 +451,12 @@ mod tests {
             "--config",
             "--compressed",
             "--insecure",
+            "--netrc",
+            "--anyauth",
+            "--digest",
+            "--oauth2-bearer=x",
+            "--user=x",
+            "-ux",
             "--",
             "-",
             "-XGET",
@@ -389,6 +469,133 @@ mod tests {
             "-help",
         ] {
             rejected(&[option, "https://example.com"]);
+        }
+    }
+
+    /// Each credential flag proposes its own secret use beside the input `invoke` reads.
+    ///
+    /// The DRN rides the proposal; the input is byte for byte the one the same argv without a
+    /// credential flag produces, so nothing about the secret reaches the capability.
+    #[test]
+    fn each_credential_flag_proposes_its_secret_use_beside_an_unchanged_input() {
+        let plain = resolved(&["https://example.com/a"]);
+
+        let (input, secret_use) =
+            proposed(&["--oauth2-bearer", DRN, "https://example.com/a"], None);
+        assert_eq!(input, plain);
+        assert_eq!(
+            secret_use,
+            Some(SecretUseProposal::HttpBearer {
+                secret: DRN.parse().expect("canonical DRN fixture"),
+            })
+        );
+
+        let user = format!("user-a:{DRN}");
+        for spelling in ["-u", "--user"] {
+            let (input, secret_use) =
+                proposed(&[spelling, user.as_str(), "https://example.com/a"], None);
+            assert_eq!(input, plain, "{spelling}");
+            assert_eq!(
+                secret_use,
+                Some(SecretUseProposal::HttpBasic {
+                    secret: DRN.parse().expect("canonical DRN fixture"),
+                    username: "user-a".to_owned(),
+                }),
+                "{spelling}"
+            );
+        }
+    }
+
+    /// A proposal names at most one secret use, so both flags together, or either twice, is a
+    /// fixed usage error rather than a silent last-wins.
+    #[test]
+    fn a_second_credential_flag_is_refused_rather_than_overwriting_the_first() {
+        let user = format!("user-a:{DRN}");
+        let user = user.as_str();
+        for args in [
+            vec!["--oauth2-bearer", DRN, "-u", user, "https://example.com"],
+            vec!["-u", user, "--oauth2-bearer", DRN, "https://example.com"],
+            vec![
+                "--oauth2-bearer",
+                DRN,
+                "--oauth2-bearer",
+                DRN,
+                "https://example.com",
+            ],
+            vec!["-u", user, "--user", user, "https://example.com"],
+        ] {
+            rendered_error(&args, None, CREDENTIAL_ONCE);
+        }
+    }
+
+    /// Only a canonical bare DRN is a secret reference.
+    ///
+    /// The retired shell builtin's `${drn:…}` marker is the spelling a model is most likely to
+    /// carry over, and it is not a DRN. Every refusal is one fixed sentence: a value given to a
+    /// credential flag is exactly where a real token would land if one were pasted by mistake, so
+    /// nothing here echoes it back.
+    #[test]
+    fn only_a_canonical_bare_drn_is_accepted_and_no_refusal_echoes_the_value() {
+        const SENTINEL: &str = "secret-sentinel-never-return";
+        for value in [
+            "${drn:com.xrl:secret:test:curl/token}",
+            "drn:com.xrl:secret:Test:curl/token",
+            "drn:com.xrl:secret:test:curl//token",
+            "not-a-drn",
+            "",
+            SENTINEL,
+        ] {
+            rendered_error(
+                &["--oauth2-bearer", value, "https://example.com"],
+                None,
+                BEARER_NOT_A_DRN,
+            );
+            let user = format!("user-a:{value}");
+            rendered_error(
+                &["-u", user.as_str(), "https://example.com"],
+                None,
+                USER_NOT_A_DRN,
+            );
+        }
+        assert!(!BEARER_NOT_A_DRN.contains(SENTINEL));
+        assert!(!USER_NOT_A_DRN.contains(SENTINEL));
+        assert!(!USER_MALFORMED.contains(SENTINEL));
+    }
+
+    /// `-u` is `<username>:<drn>`, and the username rule is the broker's own.
+    ///
+    /// Empty, oversized, colon-bearing, and control-bearing names are refused here because
+    /// [`SecretUseProposal`]'s deserializer refuses them, which is the same code the broker
+    /// decodes the proposal with.
+    #[test]
+    fn a_basic_username_must_satisfy_the_rule_the_broker_decodes_with() {
+        for value in [
+            "user-a".to_owned(),
+            format!(":{DRN}"),
+            format!("user a\u{7f}:{DRN}"),
+            format!("user\na:{DRN}"),
+            format!("{}:{DRN}", "u".repeat(257)),
+        ] {
+            rendered_error(
+                &["-u", value.as_str(), "https://example.com"],
+                None,
+                USER_MALFORMED,
+            );
+        }
+        // A username may hold anything else the rule permits, spaces included.
+        let user = format!("user a:{DRN}");
+        let (_, secret_use) = proposed(&["-u", user.as_str(), "https://example.com"], None);
+        assert_eq!(secret_use.expect("a proposal").username(), Some("user a"));
+    }
+
+    #[test]
+    fn a_credential_flag_still_needs_its_value_and_a_url() {
+        for args in [
+            vec!["--oauth2-bearer"],
+            vec!["-u"],
+            vec!["--oauth2-bearer", DRN],
+        ] {
+            rejected(&args);
         }
     }
 

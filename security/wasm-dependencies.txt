@@ -3,10 +3,10 @@
 anyhow 1.0.104 registry+https://github.com/rust-lang/crates.io-index
 base64 0.22.1 registry+https://github.com/rust-lang/crates.io-index
 bitflags 2.13.1 registry+https://github.com/rust-lang/crates.io-index
-dekopon-capability 0.13.0 registry+https://github.com/rust-lang/crates.io-index
-dekopon-core 0.13.0 registry+https://github.com/rust-lang/crates.io-index
-dekopon-provider-http 0.13.0 registry+https://github.com/rust-lang/crates.io-index
-dekopon-provider-sdk 0.13.0 registry+https://github.com/rust-lang/crates.io-index
+dekopon-capability 0.15.0 registry+https://github.com/rust-lang/crates.io-index
+dekopon-core 0.15.0 registry+https://github.com/rust-lang/crates.io-index
+dekopon-provider-http 0.15.0 registry+https://github.com/rust-lang/crates.io-index
+dekopon-provider-sdk 0.15.0 registry+https://github.com/rust-lang/crates.io-index
 equivalent 1.0.2 registry+https://github.com/rust-lang/crates.io-index
 foldhash 0.2.0 registry+https://github.com/rust-lang/crates.io-index
 hashbrown 0.17.1 registry+https://github.com/rust-lang/crates.io-index

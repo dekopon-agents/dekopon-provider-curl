@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use dekopon_core::{CommandWordConflictKind, command_word_conflicts};
+use dekopon_core::{CommandWordConflictKind, RESERVED_COMMAND_WORDS, command_word_conflicts};
 use dekopon_provider_http::{Header, HttpError, HttpErrorCode, Request, Response};
 use dekopon_provider_sdk::{CapabilityId, ComponentResponse, EffectKind, Provider};
 use serde_json::{Value, json};
@@ -59,7 +59,7 @@ fn manifest_is_the_exact_single_capability_contract() {
         manifest.description,
         "Performs one bounded broker-authorized bodyless HTTP GET."
     );
-    assert_eq!(manifest.command_words, ["curlget"]);
+    assert_eq!(manifest.command_words, ["curl"]);
     assert_eq!(manifest.capabilities.len(), 1);
     let declared = &manifest.capabilities[0];
     assert_eq!(declared.id.as_str(), "curl.get");
@@ -755,18 +755,29 @@ fn every_public_failure_is_fixed_and_secret_sentinel_free() {
     assert!(!transport.to_string().contains(SENTINEL));
 }
 
+/// The word is claimable because the shell gave it up, and the registry is asked rather than told.
+///
+/// Dekopon 0.15.0 deleted the shell's `curl` builtin and dropped `curl` from
+/// [`RESERVED_COMMAND_WORDS`], which is what lets this provider own the word outright. Asserting
+/// against the published registry rather than a local copy means a release that took the word back
+/// fails here instead of at an operator's startup. A plain word is also a word someone else can
+/// want, and the registry's answer to that is a startup conflict rather than a shadowing.
 #[test]
-fn command_word_registry_contract_reserves_curl_but_accepts_curlget() {
+fn the_registry_yields_curl_and_still_refuses_a_reserved_or_contested_word() {
     let declared = |word: &str| vec![("curl".to_owned(), vec![word.to_owned()])];
-    let conflicts = command_word_conflicts(&declared("curl"));
-    assert_eq!(conflicts.len(), 1);
-    assert_eq!(conflicts[0].kind, CommandWordConflictKind::Reserved);
+    assert!(!RESERVED_COMMAND_WORDS.contains(&"curl"));
+    assert!(command_word_conflicts(&declared("curl")).is_empty());
 
-    assert!(command_word_conflicts(&declared("curlget")).is_empty());
+    let reserved = command_word_conflicts(&declared("cat"));
+    assert_eq!(reserved.len(), 1);
+    assert_eq!(reserved[0].kind, CommandWordConflictKind::Reserved);
 
-    let shaped = command_word_conflicts(&declared("curl-get"));
-    assert_eq!(shaped.len(), 1);
-    assert_eq!(shaped[0].kind, CommandWordConflictKind::CapabilityShaped);
+    let contested = command_word_conflicts(&[
+        ("curl".to_owned(), vec!["curl".to_owned()]),
+        ("other-provider".to_owned(), vec!["curl".to_owned()]),
+    ]);
+    assert_eq!(contested.len(), 1);
+    assert_eq!(contested[0].kind, CommandWordConflictKind::Duplicate);
 }
 
 #[test]

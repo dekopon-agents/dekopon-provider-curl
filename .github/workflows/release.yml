@@ -280,7 +280,7 @@ jobs:
           marker="provider-curl-run:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
           printf '%s\n\n%s\n' \
             "$marker" \
-            'Bounded unauthenticated HTTP GET provider for Dekopon 0.13.0. Verify the component with the attached checksum and public GitHub attestations.' \
+            'Bounded broker-authorized HTTP GET provider for Dekopon 0.15.0. Verify the component with the attached checksum and public GitHub attestations.' \
             >"$RUNNER_TEMP/release-notes.md"
           gh release create "$GITHUB_REF_NAME" \
             --verify-tag \
