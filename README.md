@@ -1,13 +1,13 @@
 # dekopon-provider-curl
 
-A production-bounded, unauthenticated HTTP GET provider for
-[Dekopon](https://github.com/dekopon-agents/dekopon) 0.13.0.
+A production-bounded HTTP GET provider for
+[Dekopon](https://github.com/dekopon-agents/dekopon) 0.15.0.
 
 | Manifest field | Value |
 |---|---|
 | Provider | `curl` |
 | Capability | `curl.get` |
-| Command word | `curlget` |
+| Command word | `curl` |
 | Effect / risk | `read-only` / `Medium` |
 
 `Medium` is deliberate: the caller controls the complete path/query, fetched content can be
@@ -25,7 +25,7 @@ host—refuses the component. That is expected, not an installation error. Confi
 `dekopon-brokerd`, an exact constraint set, and a separate Cedar grant. See
 [`examples/broker.yaml`](examples/broker.yaml) and [`examples/policies.cedar`](examples/policies.cedar).
 
-Supported v0.2.0 constraints are:
+Supported v0.3.0 constraints are:
 
 ```yaml
 constraintSets:
@@ -45,22 +45,18 @@ constraintSets:
         allowPlaintextLoopback: false
 ```
 
-There must be no `credential` or `credentialByAgent`. These bounds sit below Dekopon 0.13.0 host
-defaults (30 seconds, 64 MiB Wasm memory, 1 MiB input/output, 32 calls, 1 MiB request, 4 MiB
-response, 128 headers, and 64 KiB header bytes).
+There must be no `credential` or `credentialByAgent`. A caller-named DRN is a different mechanism
+with its own policy and its own owner-authored binding; see [Credentials](#credentials). These
+bounds sit below Dekopon 0.15.0 host defaults (30 seconds, 64 MiB Wasm memory, 1 MiB input/output,
+32 calls, 1 MiB request, 4 MiB response, 128 headers, and 64 KiB header bytes).
 
 ### Contract limitations
 
-1. **`curl` cannot be this provider's word.** The sandboxed shell reserves it as a builtin and the
-   registry rejects a provider claiming it. `curlget` is separator-free and unreserved. `curl-get`
-   is capability-shaped and also invalid. The reserved builtin remains available in broker mode:
-
-   The reserved builtin's broader parser can propose methods or bodies; this provider still
-   rejects anything except a bodyless GET.
-2. **Cedar cannot inspect URI path or query.** Granting `curl.get` for an authority grants every
+1. **Cedar cannot inspect URI path or query.** Granting `curl.get` for an authority grants every
    otherwise-permitted GET path/query on that authority. Use a dedicated authority when that is too
-   broad.
-3. **Duplicate raw JSON keys cannot be rejected after SDK decoding.** `serde_json::Value` retains
+   broad. A secret-use binding is the narrower object: it does constrain path and query, but only
+   for where the secret it names may go, never for where the capability may go.
+2. **Duplicate raw JSON keys cannot be rejected after SDK decoding.** `serde_json::Value` retains
    the last value. Tests record this last-wins limitation; no documentation claims duplicate-key
    rejection.
 
@@ -131,17 +127,22 @@ prompt-inject a model.
 
 ## Command word
 
+Dekopon 0.15.0 deleted the shell's `curl` builtin and dropped `curl` from
+`dekopon_core::RESERVED_COMMAND_WORDS`, so this provider claims the word outright. There is no
+alias: `curlget`, which v0.2.0 used because the builtin held `curl`, is gone.
+
 `run-command` is a pure parser; Dekopon links imports into a disabled resolution context and fails
-the run if an import is touched. `argv` excludes `curlget`:
+the run if an import is touched. `argv` excludes `curl`:
 
 ```text
-curlget [-s|-S|<short bundle containing only s/S>]
-        [--silent|--show-error]
-        [-X GET|--request GET]
-        [-H "Name: value"|--header "Name: value"]...
-        [-H @-|--header @-]
-        URL
-curlget -h|--help
+curl [-s|-S|<short bundle containing only s/S>]
+     [--silent|--show-error]
+     [-X GET|--request GET]
+     [-H "Name: value"|--header "Name: value"]...
+     [-H @-|--header @-]
+     [--oauth2-bearer DRN|-u USER:DRN|--user USER:DRN]
+     URL
+curl -h|--help
 ```
 
 Quiet flags are documented no-ops because structured execution has no progress meter. Method values
@@ -161,11 +162,39 @@ ordinary path.
 `@file` for any file other than `-`, and every unlisted option render on standard error at status 2:
 
 ```text
-usage: curlget [-sS] [-X GET] [-H "Name: value"|-H @-]... URL
-try 'curlget --help'
+usage: curl [-sS] [-X GET] [-H "Name: value"|-H @-]...
+            [--oauth2-bearer DRN|-u USER:DRN] URL
+try 'curl --help'
 ```
 
 Rendered text is produced by the guest before authorization and grants nothing.
+
+## Credentials
+
+`--oauth2-bearer <drn>` and `-u <username>:<drn>` name one secret by its public DRN,
+`drn:<authority>:secret:<realm>:<path>` — the two forms the retired shell builtin took, spelled with
+a bare DRN rather than that builtin's `${drn:…}` marker. At most one of the two, at most once.
+
+```sh
+curl --oauth2-bearer drn:com.xrl:secret:prod:api/token https://api.example.com/v1/thing
+curl -u userA:drn:com.xrl:secret:prod:api/password https://api.example.com/v1/thing
+```
+
+The DRN never enters the invocation. It rides the proposal's `secretUse` field, and the input is
+byte for byte the one the same argv without the flag produces. The broker authorizes the use
+itself, needing both a `secret.use` Cedar statement for that exact DRN, capability, provider, and
+sink, and an owner-authored binding fixing the sink, Basic username, hosts, methods, paths, query,
+and injection count. Only after both does it resolve the secret and write the `Authorization`
+header at the native HTTP boundary. A DRN the owner never bound, a sink or username the binding
+does not name, or a destination outside it is `secret-denied` before any HTTP call.
+
+No secret byte ever exists inside this component: it proposes a name and the broker decides.
+`authorization` stays off the caller-header allowlist, so the guest cannot send that header under
+any argv, and the broker putting it there is the only way it reaches the wire. A refusal naming a
+credential flag is a fixed sentence that never echoes the value, because that is exactly where a
+real token lands when one is pasted by mistake. What this does not change: a grant for an authority
+still covers every GET path and query this provider can send there, so a binding is narrower than
+the capability and never wider, and an authenticated response is as untrusted as any other.
 
 ## Explicit non-goals
 
@@ -173,7 +202,8 @@ This provider is not general curl and intentionally provides none of the followi
 
 - methods other than GET, HEAD, `-G`, request bodies, data, forms, or uploads (so no `-d @-`);
 - redirects, fail-on-status, retries, retry timing, or follow-up calls;
-- authentication, generic credential injection, bearer/basic auth, cookies, or token fields;
+- generic credential injection through `credential`/`credentialByAgent`, cookies, caller-supplied
+  authorization headers, or any token field in the invocation input;
 - proxies or environment proxy inheritance;
 - output files, `@file` input from anything but the pipe, config files, filesystem access,
   subprocesses, or libcurl;
@@ -187,8 +217,10 @@ This provider is not general curl and intentionally provides none of the followi
 - sanitizing, trusting, interpreting, or prompt-safety-classifying fetched content;
 - rejecting duplicate raw JSON keys after the SDK has decoded them.
 
-Generic credentialed GET is excluded because an arbitrary allowed path can reflect a broker-injected
-credential in its response.
+Generic credentialed GET is excluded because an arbitrary allowed path can reflect a
+broker-injected credential in its response. A DRN named on argv is not that: it is refused unless
+an owner-authored binding already fixed the sink, username, host, method, and exact path it may be
+sent to.
 
 ## Build and acceptance
 

@@ -1,4 +1,4 @@
-# Supported v0.2.0 constraint profile. Replace the authority with an exact operator-selected
+# Supported v0.3.0 constraint profile. Replace the authority with an exact operator-selected
 # HTTPS authority. A separate Cedar statement must authorize each caller.
 constraintSets:
   curl.get:
@@ -19,3 +19,22 @@ constraintSets:
         allowPlaintextLoopback: false
 
 # Deliberately absent: credential and credentialByAgent. Generic credentialed GET is unsupported.
+
+# `curl --oauth2-bearer <drn>` and `curl -u <user>:<drn>` are authorized separately, through the
+# owner-only secret map (`secretMapPath`) rather than this file. One binding per DRN and sink, each
+# narrower than the constraint set above, and each needing its own `secret.use` Cedar statement:
+#
+#   secrets:
+#     - drn: drn:com.xrl:secret:prod:api/token
+#       source: {...}          # physical locator; never DRN-addressable, never in a prompt
+#       bindings:
+#         - id: curl-api-token
+#           capability: curl.get
+#           sink: httpBearer   # httpBasic adds basicUsername
+#           allowedHosts: [api.example.com]
+#           allowedMethods: [GET]
+#           allowedPaths:
+#             - match: exact
+#               path: /v1/thing
+#           allowQuery: false
+#           maxInjections: 1

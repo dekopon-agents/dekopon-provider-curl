@@ -1,10 +1,15 @@
-//! One bounded, unauthenticated, broker-authorized HTTP GET for Dekopon.
+//! One bounded, broker-authorized HTTP GET for Dekopon.
 //!
 //! The component has no transport of its own. Its sole import is
 //! `dekopon:http/client@1.0.0`, which direct hosts intentionally do not link. The broker owns URL
 //! canonicalization, DNS validation and pinning, exact authority/method constraints, timeouts,
 //! response streaming limits, and the credential boundary. This guest adds a closed input shape,
 //! conservative URI checks, a narrow request-header allowlist, and byte-preserving bounded output.
+//!
+//! `curl --oauth2-bearer <drn>` and `curl -u <user>:<drn>` name a secret by its public DRN and
+//! nothing else. The name travels on the proposal's `secret_use`, never in the capability input;
+//! the broker authorizes that use separately and renders the `Authorization` header itself, so no
+//! secret byte ever exists inside this component.
 //!
 //! Generated component bindings necessarily contain `unsafe` ABI shims. Hand-written code in this
 //! crate contains no unsafe block.
@@ -79,7 +84,7 @@ impl Provider for Curl {
             api_version: ProviderApiVersion::V1Alpha1,
             id: PROVIDER_ID.parse().expect("static provider ID is valid"),
             description: "Performs one bounded broker-authorized bodyless HTTP GET.".to_owned(),
-            command_words: vec!["curlget".to_owned()],
+            command_words: vec!["curl".to_owned()],
             capabilities: vec![ProviderCapability {
                 id: CAPABILITY
                     .parse()

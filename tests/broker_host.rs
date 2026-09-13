@@ -12,21 +12,24 @@ use std::{
     time::Duration,
 };
 
+use async_trait::async_trait;
 use dekopon_broker::{
     AuditEvent, AuthenticatedContext, Broker, BrokerLimits, CapabilityRoute, ConstraintCatalog,
     ConstraintSet, CredentialStore, IdentityDirectory, InMemoryAuditLog, InvocationRequest,
-    PolicyEngine, PolicyWorld,
+    PolicyEngine, PolicyWorld, SecretCatalog, SecretMaterial, SecretResolutionError,
+    SecretResolver, SecretUseBinding,
 };
 use dekopon_broker_host::{
     BrokerHostError, BrokerHostLimits, BrokerProviderRegistry, CommandRunOutcome,
 };
 use dekopon_broker_protocol::TraceParent;
 use dekopon_capability::{
-    AuthorizedInvocation, EffectKind, ExecutionConstraints, HttpConstraints, InvocationOutcome,
-    ProposedInvocation, broker::AuthorizationGate,
+    AuthorizedInvocation, EffectKind, ExecutionConstraints, HttpConstraints, HttpPathRule,
+    InvocationOutcome, ProposedInvocation, broker::AuthorizationGate,
 };
 use dekopon_core::{
-    Actor, AgentId, CapabilityId, InvocationId, PrincipalId, ProviderId, RiskLevel, TraceId,
+    Actor, AgentId, CapabilityId, InvocationId, PrincipalId, ProviderId, RiskLevel, SecretDrn,
+    SecretSinkKind, SecretUseProposal, TraceId,
 };
 use serde_json::{Value, json};
 
@@ -144,7 +147,7 @@ async fn broker_loads_exact_manifest_and_resolution_is_import_free() {
     let registry = BrokerProviderRegistry::load([component()], BrokerHostLimits::default())
         .await
         .expect("broker linker loads HTTP provider");
-    assert_eq!(registry.command_words(), ["curlget"]);
+    assert_eq!(registry.command_words(), ["curl"]);
     let manifest = registry.manifests().next().expect("one manifest");
     assert_eq!(manifest.id.as_str(), "curl");
     assert_eq!(manifest.capabilities.len(), 1);
@@ -154,7 +157,7 @@ async fn broker_loads_exact_manifest_and_resolution_is_import_free() {
 
     let piped = registry
         .run_command(
-            "curlget",
+            "curl",
             &[
                 "-sS".to_owned(),
                 "-X".to_owned(),
@@ -168,8 +171,16 @@ async fn broker_loads_exact_manifest_and_resolution_is_import_free() {
         .await
         .expect("disabled resolution context is untouched");
     match piped {
-        CommandRunOutcome::Proposed { capability, input } => {
+        CommandRunOutcome::Proposed {
+            capability,
+            input,
+            secret_use,
+        } => {
             assert_eq!(capability.as_str(), "curl.get");
+            assert_eq!(
+                secret_use, None,
+                "an argv naming no DRN proposes no secret use"
+            );
             assert_eq!(input["method"], "GET");
             assert_eq!(input["uri"], "https://example.com/private");
             assert_eq!(
@@ -183,7 +194,7 @@ async fn broker_loads_exact_manifest_and_resolution_is_import_free() {
     // Help and usage errors are rendered by the guest before authorization, so neither reaches a
     // capability and neither can touch the HTTP import.
     match registry
-        .run_command("curlget", &["--help".to_owned()], None)
+        .run_command("curl", &["--help".to_owned()], None)
         .await
         .expect("help renders")
     {
@@ -192,14 +203,14 @@ async fn broker_loads_exact_manifest_and_resolution_is_import_free() {
             stderr,
             status,
         } => {
-            assert!(stdout.starts_with("curlget: one bounded"));
+            assert!(stdout.starts_with("curl: one bounded"));
             assert_eq!(stderr, "");
             assert_eq!(status, 0);
         }
         other => panic!("unexpected outcome: {other:?}"),
     }
     match registry
-        .run_command("curlget", &["--data".to_owned(), "x".to_owned()], None)
+        .run_command("curl", &["--data".to_owned(), "x".to_owned()], None)
         .await
         .expect("a refused argv renders")
     {
@@ -209,7 +220,7 @@ async fn broker_loads_exact_manifest_and_resolution_is_import_free() {
             status,
         } => {
             assert_eq!(stdout, "");
-            assert!(stderr.starts_with("usage: curlget"));
+            assert!(stderr.starts_with("usage: curl"));
             assert_eq!(status, 2);
         }
         other => panic!("unexpected outcome: {other:?}"),
@@ -666,4 +677,421 @@ async fn cedar_denies_before_network_allows_exact_get_and_audits_metadata_only()
     ] {
         assert!(!serialized.contains(secret), "audit leaked {secret}");
     }
+}
+
+/// The one DRN every secret fixture names. Knowing it grants nothing.
+const SECRET: &str = "drn:com.xrl:secret:test:curl/token";
+
+/// What the private map resolves that DRN to. The native Basic sink needs at least 16 bytes.
+const SECRET_MATERIAL: &[u8] = b"drn-secret-never-visible";
+
+/// The one path the bindings below authorize, query-free.
+const SECRET_PATH: &str = "/api/v1/thing";
+
+fn secret_drn() -> SecretDrn {
+    SECRET.parse().expect("canonical secret fixture")
+}
+
+fn argv(words: &[&str]) -> Vec<String> {
+    words.iter().map(|word| (*word).to_owned()).collect()
+}
+
+async fn registry() -> BrokerProviderRegistry {
+    BrokerProviderRegistry::load([component()], BrokerHostLimits::default())
+        .await
+        .expect("broker loads component")
+}
+
+/// A private map that hands back one fixed secret for any DRN it is asked about.
+///
+/// The binding, not this resolver, decides which DRN may be asked about at all, so a resolver that
+/// answers everything still cannot widen what the broker will inject.
+#[derive(Debug)]
+struct StaticSecretResolver(&'static [u8]);
+
+#[async_trait]
+impl SecretResolver for StaticSecretResolver {
+    async fn resolve(&self, _secret: &SecretDrn) -> Result<SecretMaterial, SecretResolutionError> {
+        Ok(SecretMaterial::new(self.0.to_vec()))
+    }
+}
+
+/// A broker whose policy permits `curl.get` and this one `secret.use` in `sink`, and whose single
+/// owner-authored binding lets [`SECRET`] reach `curl.get` at exactly one authority and path.
+///
+/// Policy and binding are deliberately separate objects here because the broker requires both: the
+/// tests below move one at a time to show which refusal belongs to which.
+fn secret_broker(
+    registry: BrokerProviderRegistry,
+    authority: &str,
+    sink: SecretSinkKind,
+    basic_username: Option<&str>,
+    audit: &Arc<InMemoryAuditLog>,
+) -> Broker<InMemoryAuditLog> {
+    let world = PolicyWorld::new(
+        [principal("allowed-caller")],
+        [(capability(), "curl".parse().expect("valid provider"))],
+    )
+    .expect("policy world")
+    .with_secrets([secret_drn()]);
+    let policy = format!(
+        r#"@id("caller-may-fetch")
+        permit(
+            principal == Dekopon::Principal::"allowed-caller",
+            action == Dekopon::Action::"curl.get",
+            resource == Dekopon::Provider::"curl"
+        ) when {{ context has agent && context.agent == "curl-test" }}
+          unless {{ context has via }};
+
+        @id("caller-may-use-the-token")
+        permit(
+            principal == Dekopon::Principal::"allowed-caller",
+            action == Dekopon::Action::"secret.use",
+            resource == Dekopon::Secret::"{SECRET}"
+        ) when {{ context.capability == "curl.get"
+               && context.provider == "curl"
+               && context.sink == "{sink}" }};"#
+    );
+    let set = ConstraintSet {
+        route: CapabilityRoute::Generic,
+        provider: "curl".parse().expect("valid provider"),
+        effect: EffectKind::ReadOnly,
+        risk: RiskLevel::Medium,
+        credential: None,
+        credential_by_agent: BTreeMap::new(),
+        constraints: profile(authority),
+    };
+    assert!(set.credential.is_none(), "a DRN is not a bound credential");
+    Broker::new(
+        registry,
+        principal("broker-test"),
+        "policy-test".to_owned(),
+        PolicyEngine::new(&policy, &world).expect("secret policy validates"),
+        ConstraintCatalog::new([(capability(), set)]).expect("catalog"),
+        CredentialStore::empty(),
+        IdentityDirectory::empty(),
+        Arc::clone(audit),
+        BrokerLimits::default(),
+    )
+    .expect("broker metadata and constraints agree")
+    .with_secret_catalog(
+        SecretCatalog::new(
+            vec![SecretUseBinding {
+                binding_id: "curl-token".to_owned(),
+                secret: secret_drn(),
+                capability: capability(),
+                sink,
+                basic_username: basic_username.map(str::to_owned),
+                allowed_hosts: vec![authority.to_owned()],
+                allowed_methods: vec!["GET".to_owned()],
+                allowed_paths: vec![HttpPathRule::Exact {
+                    path: SECRET_PATH.to_owned(),
+                }],
+                allow_query: false,
+                max_injections: 1,
+            }],
+            Arc::new(StaticSecretResolver(SECRET_MATERIAL)),
+        )
+        .expect("secret catalog"),
+    )
+    .expect("binding fits the capability")
+}
+
+fn secret_request(
+    id: &str,
+    input: Value,
+    secret_use: Option<SecretUseProposal>,
+) -> InvocationRequest {
+    InvocationRequest {
+        secret_use,
+        ..request(id, input)
+    }
+}
+
+/// A credential flag's DRN leaves on the proposal, never inside the capability input.
+///
+/// The input a credential argv produces is byte for byte the one the same argv without the flag
+/// produces, which is what keeps the DRN out of provider JSON, out of `invoke`, and out of the
+/// closed `curl.get` contract that would reject it anyway.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_credential_flag_proposes_its_secret_use_beside_an_untouched_input() {
+    let registry = registry().await;
+    let uri = format!("https://api.example.com{SECRET_PATH}");
+    let plain = match registry
+        .run_command("curl", &argv(&[uri.as_str()]), None)
+        .await
+        .expect("a plain argv proposes")
+    {
+        CommandRunOutcome::Proposed {
+            input, secret_use, ..
+        } => {
+            assert_eq!(secret_use, None);
+            input
+        }
+        other => panic!("unexpected outcome: {other:?}"),
+    };
+
+    let basic_value = format!("user-a:{SECRET}");
+    for (words, expected) in [
+        (
+            vec!["--oauth2-bearer", SECRET, uri.as_str()],
+            SecretUseProposal::HttpBearer {
+                secret: secret_drn(),
+            },
+        ),
+        (
+            vec!["-u", basic_value.as_str(), uri.as_str()],
+            SecretUseProposal::HttpBasic {
+                secret: secret_drn(),
+                username: "user-a".to_owned(),
+            },
+        ),
+    ] {
+        match registry
+            .run_command("curl", &argv(&words), None)
+            .await
+            .expect("a credential argv proposes")
+        {
+            CommandRunOutcome::Proposed {
+                capability,
+                input,
+                secret_use,
+            } => {
+                assert_eq!(capability.as_str(), "curl.get");
+                assert_eq!(input, plain, "{words:?}");
+                assert_eq!(secret_use, Some(expected), "{words:?}");
+            }
+            other => panic!("{words:?}: unexpected outcome: {other:?}"),
+        }
+    }
+
+    // A value that is not a canonical DRN never becomes a proposal; the guest renders instead.
+    match registry
+        .run_command(
+            "curl",
+            &argv(&[
+                "--oauth2-bearer",
+                "${drn:com.xrl:secret:test:curl/token}",
+                uri.as_str(),
+            ]),
+            None,
+        )
+        .await
+        .expect("a non-canonical reference renders")
+    {
+        CommandRunOutcome::Rendered { stderr, status, .. } => {
+            assert!(stderr.starts_with("curl: --oauth2-bearer:"), "{stderr}");
+            assert_eq!(status, 2);
+        }
+        other => panic!("unexpected outcome: {other:?}"),
+    }
+}
+
+/// Both credential flags, end to end: policy plus binding, then the header the broker renders.
+///
+/// The component never sees [`SECRET_MATERIAL`]. It proposes a name; the broker decides, resolves,
+/// and writes the `Authorization` header at the native boundary, which is why the header the guest
+/// is forbidden to send is nevertheless on the wire.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bearer_and_a_basic_use_are_authorized_and_rendered_at_the_native_boundary() {
+    let audit = Arc::new(InMemoryAuditLog::new(32).expect("audit bound"));
+    let response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec();
+
+    let (authority, received, server) = mock_http(response.clone());
+    let bearer = secret_broker(
+        registry().await,
+        &authority,
+        SecretSinkKind::HttpBearer,
+        None,
+        &audit,
+    );
+    let uri = format!("http://{authority}{SECRET_PATH}");
+    let outcome = bearer
+        .run_command(
+            &context("allowed-caller"),
+            None,
+            None,
+            "curl",
+            &argv(&["--oauth2-bearer", SECRET, uri.as_str()]),
+            None,
+        )
+        .await
+        .expect("the word proposes");
+    let CommandRunOutcome::Proposed {
+        input, secret_use, ..
+    } = outcome
+    else {
+        panic!("unexpected outcome: {outcome:?}");
+    };
+    let result = bearer
+        .invoke(
+            &context("allowed-caller"),
+            None,
+            None,
+            secret_request("secret-bearer", input, secret_use),
+        )
+        .await
+        .expect("dual-authorized invocation completes");
+    assert_eq!(result.outcome, InvocationOutcome::Succeeded);
+    let wire = String::from_utf8(received.recv().expect("request recorded"))
+        .expect("request headers are text");
+    assert!(
+        wire.to_ascii_lowercase().contains("authorization: bearer "),
+        "{wire}"
+    );
+    assert!(wire.contains("drn-secret-never-visible"), "{wire}");
+    server.join().expect("bearer fixture exits");
+
+    let (authority, received, server) = mock_http(response);
+    let basic = secret_broker(
+        registry().await,
+        &authority,
+        SecretSinkKind::HttpBasic,
+        Some("user-a"),
+        &audit,
+    );
+    let uri = format!("http://{authority}{SECRET_PATH}");
+    let credential = format!("user-a:{SECRET}");
+    let outcome = basic
+        .run_command(
+            &context("allowed-caller"),
+            None,
+            None,
+            "curl",
+            &argv(&["-u", credential.as_str(), uri.as_str()]),
+            None,
+        )
+        .await
+        .expect("the word proposes");
+    let CommandRunOutcome::Proposed {
+        input, secret_use, ..
+    } = outcome
+    else {
+        panic!("unexpected outcome: {outcome:?}");
+    };
+    let result = basic
+        .invoke(
+            &context("allowed-caller"),
+            None,
+            None,
+            secret_request("secret-basic", input, secret_use),
+        )
+        .await
+        .expect("dual-authorized invocation completes");
+    assert_eq!(result.outcome, InvocationOutcome::Succeeded);
+    let wire = String::from_utf8(received.recv().expect("request recorded"))
+        .expect("request headers are text");
+    assert!(
+        wire.to_ascii_lowercase().contains("authorization: basic "),
+        "{wire}"
+    );
+    // base64("user-a:drn-secret-never-visible"): the bound username, then the resolved secret.
+    assert!(
+        wire.contains("dXNlci1hOmRybi1zZWNyZXQtbmV2ZXItdmlzaWJsZQ=="),
+        "{wire}"
+    );
+    server.join().expect("basic fixture exits");
+
+    let serialized = serde_json::to_string(&audit.records().await).expect("audit serializes");
+    assert!(serialized.contains(SECRET), "the DRN is attributable");
+    for leaked in [
+        "drn-secret-never-visible",
+        "dXNlci1hOmRybi1zZWNyZXQtbmV2ZXItdmlzaWJsZQ",
+    ] {
+        assert!(!serialized.contains(leaked), "secret leaked: {leaked}");
+    }
+}
+
+/// Neither policy nor binding alone authorizes the DRN, and the argv decides neither.
+///
+/// Three brokers refuse the exact proposal the accepted one takes: one with no binding at all, one
+/// whose binding names another username, and one whose binding is for the other sink. Every
+/// refusal is the same `secret-denied` outcome, before any HTTP call.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_proposal_is_refused_without_a_binding_for_its_exact_sink_and_username() {
+    let authority = "127.0.0.1:9";
+    let uri = format!("http://{authority}{SECRET_PATH}");
+    let basic_use = Some(SecretUseProposal::HttpBasic {
+        secret: secret_drn(),
+        username: "user-a".to_owned(),
+    });
+    let input = json!({"uri": uri, "method": "GET", "headers": []});
+
+    let audit = Arc::new(InMemoryAuditLog::new(16).expect("audit bound"));
+    let mut refused = Vec::new();
+    for (name, sink, username) in [
+        ("other-username", SecretSinkKind::HttpBasic, Some("user-b")),
+        ("other-sink", SecretSinkKind::HttpBearer, None),
+    ] {
+        let broker = secret_broker(registry().await, authority, sink, username, &audit);
+        let result = broker
+            .invoke(
+                &context("allowed-caller"),
+                None,
+                None,
+                secret_request(&format!("secret-{name}"), input.clone(), basic_use.clone()),
+            )
+            .await
+            .expect("a refusal is durably accounted");
+        refused.push((name, result));
+    }
+    for (name, result) in refused {
+        assert_eq!(result.outcome, InvocationOutcome::Denied, "{name}");
+        assert_eq!(result.error.as_deref(), Some("secret-denied"), "{name}");
+        assert!(result.output.is_none(), "{name}");
+    }
+
+    // Without a secret catalog at all the same proposal is refused identically, so an operator who
+    // never opted in cannot be reached by an argv that asks.
+    let unbound = Broker::new(
+        registry().await,
+        principal("broker-test"),
+        "policy-test".to_owned(),
+        PolicyEngine::new(
+            r#"permit(
+                principal == Dekopon::Principal::"allowed-caller",
+                action == Dekopon::Action::"curl.get",
+                resource == Dekopon::Provider::"curl"
+            ) when { context has agent && context.agent == "curl-test" }
+              unless { context has via };"#,
+            &PolicyWorld::new(
+                [principal("allowed-caller")],
+                [(capability(), "curl".parse().expect("valid provider"))],
+            )
+            .expect("policy world"),
+        )
+        .expect("Cedar validates"),
+        ConstraintCatalog::new([(
+            capability(),
+            ConstraintSet {
+                route: CapabilityRoute::Generic,
+                provider: "curl".parse().expect("valid provider"),
+                effect: EffectKind::ReadOnly,
+                risk: RiskLevel::Medium,
+                credential: None,
+                credential_by_agent: BTreeMap::new(),
+                constraints: profile(authority),
+            },
+        )])
+        .expect("catalog"),
+        CredentialStore::empty(),
+        IdentityDirectory::empty(),
+        Arc::clone(&audit),
+        BrokerLimits::default(),
+    )
+    .expect("broker");
+    let result = unbound
+        .invoke(
+            &context("allowed-caller"),
+            None,
+            None,
+            secret_request("secret-unbound", input, basic_use),
+        )
+        .await
+        .expect("a refusal is durably accounted");
+    assert_eq!(result.outcome, InvocationOutcome::Denied);
+    assert_eq!(result.error.as_deref(), Some("secret-denied"));
+
+    let serialized = serde_json::to_string(&audit.records().await).expect("audit serializes");
+    assert!(!serialized.contains("drn-secret-never-visible"));
 }
