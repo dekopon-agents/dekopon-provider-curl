@@ -1,3 +1,6 @@
+# The fleet-uniform dependency policy. `cargo deny --all-features check bans licenses sources
+# advisories` runs it in CI and on a laptop; both graphs below are checked, because the shipped
+# component and the native test harness resolve to different closures.
 [graph]
 targets = ["wasm32-unknown-unknown", "x86_64-unknown-linux-gnu"]
 all-features = false
@@ -6,24 +9,30 @@ all-features = false
 ignore = []
 
 [licenses]
+version = 2
 confidence-threshold = 0.8
 allow = [
+  "0BSD",
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-2-Clause-Views",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "ISC",
   "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "PSF-2.0",
+  "Python-2.0.1",
   "Unicode-3.0",
+  "Unicode-DFS-2016",
   "Unlicense",
   "Zlib",
+  "bzip2-1.0.6",
 ]
-
-# encoding_rs reaches this graph only through the native test harness: a dev-dependency on
-# dekopon-broker-host turns on dekopon-provider-sdk's `host` feature, which pulls Wasmtime. It is
-# absent from the shipped wasm32 normal/build graph, so it appears in neither
-# security/wasm-dependencies.txt nor THIRD_PARTY_NOTICES.md. Named rather than allowed globally, so
-# a BSD-3-Clause crate that did reach the shipped closure would still fail.
-exceptions = [
-  { name = "encoding_rs", allow = ["BSD-3-Clause"] },
-]
+exceptions = []
 
 [licenses.private]
 ignore = false
@@ -31,6 +40,8 @@ ignore = false
 [bans]
 multiple-versions = "allow"
 wildcards = "deny"
+# Workspace-internal path dependencies carry no version (openobserve); that is not a wildcard.
+allow-wildcard-paths = true
 highlight = "simplest-path"
 workspace-default-features = "allow"
 external-default-features = "allow"

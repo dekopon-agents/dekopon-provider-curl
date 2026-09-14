@@ -69,13 +69,6 @@ mod bindings {
     });
 }
 
-/// The notices are part of the shipped bytes, not a detached build-side promise.
-#[cfg(target_arch = "wasm32")]
-#[used]
-#[unsafe(link_section = "dekopon.third-party-notices")]
-static THIRD_PARTY_NOTICES: [u8; include_bytes!("../THIRD_PARTY_NOTICES.md").len()] =
-    *include_bytes!("../THIRD_PARTY_NOTICES.md");
-
 struct Curl;
 
 impl Provider for Curl {

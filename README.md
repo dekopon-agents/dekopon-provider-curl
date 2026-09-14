@@ -224,47 +224,28 @@ sent to.
 
 ## Build and acceptance
 
-Release bytes use Rust 1.98.1 and wasm-tools 1.259.0, which is also the MSRV. `build.sh` only targets
-`wasm32-unknown-unknown`, normalizes crate metadata, remaps source/Cargo/sysroot paths, embeds the
-exact deterministic notices in `dekopon.third-party-notices`, componentizes, validates, enforces
-512 KiB, and writes a checksum. The inventory and SBOM resolve an isolated 39-crate normal/build
-graph so native dev features cannot leak into shipped evidence. `wasm32-wasip2` is forbidden.
+Release bytes use the toolchain pinned in `rust-toolchain.toml` (Rust 1.98.1) and wasm-tools
+1.259.0, which is also the MSRV. The build targets only `wasm32-unknown-unknown`, componentizes,
+validates, enforces 512 KiB, and writes a checksum sidecar; `wasm32-wasip2` is forbidden. Build,
+lint, dependency-policy, and component checks all run through the shared
+[`dekopon-agents/provider-workflows`](https://github.com/dekopon-agents/provider-workflows) CI
+(`ci / validate`), which `.github/workflows/ci.yml` calls.
 
 ```console
-rustup toolchain install 1.98.1 --profile minimal --component clippy --component rustfmt
-rustup target add wasm32-unknown-unknown --toolchain 1.98.1
-cargo install wasm-tools --version 1.259.0 --locked
-cargo install wasmtime-cli --version 48.0.2 --locked
-cargo install cargo-deny --version 0.20.2 --locked
-cargo install cargo-cyclonedx --version 0.5.9 --locked
-
-cargo +1.98.1 fmt --all -- --check
-cargo +1.98.1 clippy --locked --all-targets -- -D warnings
-cargo +1.98.1 test --locked --lib
-cargo +1.98.1 check --locked --target wasm32-unknown-unknown
-cargo deny --locked check advisories licenses bans sources
-./scripts/dependency_inventory.py check-sources
-./scripts/dependency_inventory.py inventory --output /tmp/curl-dependencies.txt
-./scripts/dependency_inventory.py notices --output /tmp/curl-notices.md
-cmp security/wasm-dependencies.txt /tmp/curl-dependencies.txt
-cmp THIRD_PARTY_NOTICES.md /tmp/curl-notices.md
-shellcheck build.sh scripts/*.sh
-actionlint .github/workflows/*.yml
-zizmor --pedantic .github/workflows/*.yml
-./build.sh
-./scripts/verify-component.sh
-cargo +1.98.1 test --locked --test broker_host
-./scripts/test-direct-refusal.sh
-./scripts/generate-sbom.sh dist/curl-provider.cdx.json
-./scripts/check-reproducible.sh
+cargo fmt --all --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo deny --all-features check bans licenses sources advisories
+../provider-workflows/build.sh
+DEKOPON_PROVIDER_COMPONENT=$PWD/curl-provider.wasm cargo test --locked --workspace
 ```
 
 Tests are native mocks or loopback-only broker fixtures. They never contact the public network.
-Generated Wasm, checksums, SBOMs, `dist/`, and `target/` are ignored and must be removed after local
-acceptance; do not use `cargo clean` as routine hygiene.
+`tests/broker_host.rs` requires `DEKOPON_PROVIDER_COMPONENT` to point at the built component;
+without it, the component tests panic rather than skip. Generated Wasm, checksums, and `target/`
+are ignored and must be removed after local acceptance; do not use `cargo clean` as routine
+hygiene.
 
-See [`security/RESOURCE_LIMITS.md`](security/RESOURCE_LIMITS.md) for measured fixed fuel/memory
-gates and [`RELEASE.md`](RELEASE.md) for the tag-only release process.
+See [`RELEASE.md`](RELEASE.md) for the tag-only release process.
 
 ## Distribution and license
 
@@ -273,7 +254,6 @@ provenance and CycloneDX SBOM attestations, and one public one-layer OCI artifac
 `ghcr.io/dekopon-agents/provider-curl:<version>`. It does not publish to crates.io or create
 `latest`. No repository, tag, release, or package is created by the implementation step itself.
 
-The provider is MIT OR Apache-2.0, at your option. See `LICENSE-MIT`, `LICENSE-APACHE`, and the
-embedded deterministic `THIRD_PARTY_NOTICES.md`. That self-contained bundle verifies exact
-`Cargo.lock` archive checksums and includes deduplicated full license, exception, copyright, and
-NOTICE texts rather than relying on external links. The shipped closure has no LGPL obligation.
+The provider is MIT OR Apache-2.0, at your option. See `LICENSE-MIT` and `LICENSE-APACHE`. The
+CycloneDX SBOM published as a release asset is the dependency-license record; the shipped closure
+has no LGPL obligation.
