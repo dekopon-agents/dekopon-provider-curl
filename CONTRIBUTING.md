@@ -8,8 +8,8 @@ Keep the provider closed and deterministic:
   host capability;
 - never commit `.wasm`, checksums, `dist/`, or `target/`;
 - keep every public failure fixed and secret-free, rendered command-word text included;
-- regenerate and review the isolated normal/build graph in `security/wasm-dependencies.txt` and the
-  checksum-verified, self-contained `THIRD_PARTY_NOTICES.md` bundle after a lock change.
+- run `cargo deny --all-features check bans licenses sources advisories` after a lock change; the
+  shared CI's SBOM step is the dependency-license record, not a committed file.
 
 Before opening a change, run the complete acceptance command block in `README.md`. Tests use native
 mocks or loopback listeners only and must never depend on the public network.

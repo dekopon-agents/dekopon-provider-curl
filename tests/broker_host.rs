@@ -43,7 +43,10 @@ const RESOURCE_FUEL_CEILING: u64 = 64_000_000;
 const RESOURCE_MEMORY_CEILING: usize = 16 * 1024 * 1024;
 
 fn component() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("curl-provider.wasm")
+    PathBuf::from(
+        std::env::var_os("DEKOPON_PROVIDER_COMPONENT")
+            .expect("DEKOPON_PROVIDER_COMPONENT must point at the built component"),
+    )
 }
 
 fn capability() -> CapabilityId {
