@@ -2,5 +2,5 @@ package dekopon:curl@0.1.0;
 
 world provider {
     include dekopon:provider/provider-cli@0.3.0;
-    import dekopon:http/client@1.0.0;
+    import dekopon:http/client@1.1.0;
 }

@@ -1,7 +1,7 @@
 //! One bounded, broker-authorized HTTP GET for Dekopon.
 //!
 //! The component has no transport of its own. Its sole import is
-//! `dekopon:http/client@1.0.0`, which direct hosts intentionally do not link. The broker owns URL
+//! `dekopon:http/client@1.1.0`, which direct hosts intentionally do not link. The broker owns URL
 //! canonicalization, DNS validation and pinning, exact authority/method constraints, timeouts,
 //! response streaming limits, and the credential boundary. This guest adds a closed input shape,
 //! conservative URI checks, a narrow request-header allowlist, and byte-preserving bounded output.

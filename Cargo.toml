@@ -2,7 +2,7 @@
 
 [package]
 name = "dekopon-curl-provider"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.98.1"
 license = "MIT OR Apache-2.0"
@@ -15,19 +15,19 @@ crate-type = ["cdylib"]
 
 [dependencies]
 base64 = "=0.22.1"
-dekopon-provider-http = "=0.15.0"
-dekopon-provider-sdk = "=0.15.0"
+dekopon-provider-http = "=0.18.0"
+dekopon-provider-sdk = "=0.18.0"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 wit-bindgen = { version = "=0.62.0", default-features = false, features = ["macros", "realloc"] }
 
 [dev-dependencies]
 async-trait = "=0.1.92"
-dekopon-broker = "=0.15.0"
-dekopon-broker-protocol = "=0.15.0"
-dekopon-broker-host = "=0.15.0"
-dekopon-capability = "=0.15.0"
-dekopon-core = "=0.15.0"
+dekopon-broker = "=0.18.0"
+dekopon-broker-protocol = "=0.18.0"
+dekopon-broker-host = "=0.18.0"
+dekopon-capability = "=0.18.0"
+dekopon-core = "=0.18.0"
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "time"] }
 
 [profile.release]
