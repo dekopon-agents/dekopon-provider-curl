@@ -1,7 +1,7 @@
 # dekopon-provider-curl
 
 A production-bounded HTTP GET provider for
-[Dekopon](https://github.com/dekopon-agents/dekopon) 0.15.0.
+[Dekopon](https://github.com/dekopon-agents/dekopon) 0.18.0.
 
 | Manifest field | Value |
 |---|---|
@@ -15,7 +15,7 @@ sensitive or adversarial, and broken upstreams can make GET stateful.
 
 ## Broker-only execution
 
-The component imports **exactly** `dekopon:http/client@1.0.0` and exports `describe`, `invoke`, and
+The component imports **exactly** `dekopon:http/client@1.1.0` and exports `describe`, `invoke`, and
 `run-command`. It imports no WASI or other interface and contains no HTTP stack. Only a separate
 Dekopon broker links the import and supplies authorization, canonical URL handling, DNS validation
 and pinning, streaming limits, and transport.
@@ -25,7 +25,7 @@ host—refuses the component. That is expected, not an installation error. Confi
 `dekopon-brokerd`, an exact constraint set, and a separate Cedar grant. See
 [`examples/broker.yaml`](examples/broker.yaml) and [`examples/policies.cedar`](examples/policies.cedar).
 
-Supported v0.3.0 constraints are:
+Supported v0.4.0 constraints are:
 
 ```yaml
 constraintSets:
@@ -47,7 +47,7 @@ constraintSets:
 
 There must be no `credential` or `credentialByAgent`. A caller-named DRN is a different mechanism
 with its own policy and its own owner-authored binding; see [Credentials](#credentials). These
-bounds sit below Dekopon 0.15.0 host defaults (30 seconds, 64 MiB Wasm memory, 1 MiB input/output,
+bounds sit below Dekopon 0.18.0 host defaults (30 seconds, 64 MiB Wasm memory, 1 MiB input/output,
 32 calls, 1 MiB request, 4 MiB response, 128 headers, and 64 KiB header bytes).
 
 ### Contract limitations

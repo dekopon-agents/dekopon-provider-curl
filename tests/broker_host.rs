@@ -21,6 +21,7 @@ use dekopon_broker::{
 };
 use dekopon_broker_host::{
     BrokerHostError, BrokerHostLimits, BrokerProviderRegistry, CommandRunOutcome,
+    asset::AssetInputs,
 };
 use dekopon_broker_protocol::TraceParent;
 use dekopon_capability::{
@@ -93,6 +94,7 @@ fn profile(authority: &str) -> ExecutionConstraints {
             allow_plaintext_loopback: true,
         }),
         storage: None,
+        asset: None,
         secret_use: None,
     }
 }
@@ -251,6 +253,7 @@ async fn exact_loopback_grant_sends_one_bodyless_get_without_credentials() {
                 profile(&authority),
             ),
             None,
+            AssetInputs::default(),
         )
         .await
         .expect("exact grant executes");
@@ -325,7 +328,11 @@ async fn missing_wrong_host_method_port_and_plaintext_grants_are_terminal() {
 
     for (name, constraints, reason) in cases {
         let failure = registry
-            .invoke(authorized(name, json!({"uri": uri}), constraints), None)
+            .invoke(
+                authorized(name, json!({"uri": uri}), constraints),
+                None,
+                AssetInputs::default(),
+            )
             .await
             .expect_err("host authorization is sticky and terminal");
         assert!(
@@ -366,6 +373,7 @@ async fn forbidden_caller_headers_and_credential_fields_fail_before_network() {
                     profile("127.0.0.1:9"),
                 ),
                 None,
+                AssetInputs::default(),
             )
             .await
             .expect_err("closed guest input is refused");
@@ -398,6 +406,7 @@ async fn timeout_and_streamed_overflow_return_no_partial_provider_response() {
                 timeout_profile,
             ),
             None,
+            AssetInputs::default(),
         )
         .await
         .expect_err("stalled response times out");
@@ -434,6 +443,7 @@ async fn timeout_and_streamed_overflow_return_no_partial_provider_response() {
                 small,
             ),
             None,
+            AssetInputs::default(),
         )
         .await
         .expect_err("streamed response bound is terminal");
@@ -471,6 +481,7 @@ async fn redirect_is_returned_without_contacting_location() {
                 profile(&authority),
             ),
             None,
+            AssetInputs::default(),
         )
         .await
         .expect("302 is successful data");
@@ -520,6 +531,7 @@ async fn bounded_worst_case_runs_under_committed_memory_and_fuel_ceilings() {
                 profile(&authority),
             ),
             None,
+            AssetInputs::default(),
         )
         .await
         .expect("bounded response fits fixed resources");
@@ -608,12 +620,13 @@ async fn cedar_denies_before_network_allows_exact_get_and_audits_metadata_only()
                 "cedar-denied",
                 json!({"uri": format!("http://{authority}/denied-secret")}),
             ),
+            AssetInputs::default(),
         )
         .await
         .expect("denial is durably accounted");
-    assert_eq!(denied.outcome, InvocationOutcome::Denied);
-    assert_eq!(denied.error.as_deref(), Some("policy-denied"));
-    assert!(denied.output.is_none());
+    assert_eq!(denied.result.outcome, InvocationOutcome::Denied);
+    assert_eq!(denied.result.error.as_deref(), Some("policy-denied"));
+    assert!(denied.result.output.is_none());
 
     let allowed = broker
         .invoke(
@@ -627,11 +640,15 @@ async fn cedar_denies_before_network_allows_exact_get_and_audits_metadata_only()
                     "headers": [{"name": "accept", "value": "header-secret"}]
                 }),
             ),
+            AssetInputs::default(),
         )
         .await
         .expect("allow is durably accounted");
-    assert_eq!(allowed.outcome, InvocationOutcome::Succeeded);
-    assert_eq!(allowed.output.as_ref().unwrap()["bodyText"], "body-secret");
+    assert_eq!(allowed.result.outcome, InvocationOutcome::Succeeded);
+    assert_eq!(
+        allowed.result.output.as_ref().unwrap()["bodyText"],
+        "body-secret"
+    );
     let wire = received
         .recv()
         .expect("exactly the allowed request arrives");
@@ -650,12 +667,13 @@ async fn cedar_denies_before_network_allows_exact_get_and_audits_metadata_only()
                     "headers": [{"name": "authorization", "value": "credential-secret"}]
                 }),
             ),
+            AssetInputs::default(),
         )
         .await
         .expect("ordinary component failure is accounted");
-    assert_eq!(failed.outcome, InvocationOutcome::Failed);
-    assert_eq!(failed.error.as_deref(), Some("provider-failure"));
-    assert!(failed.output.is_none());
+    assert_eq!(failed.result.outcome, InvocationOutcome::Failed);
+    assert_eq!(failed.result.error.as_deref(), Some("provider-failure"));
+    assert!(failed.result.output.is_none());
 
     let records = audit.records().await;
     assert_eq!(records.len(), 5);
@@ -932,10 +950,11 @@ async fn a_bearer_and_a_basic_use_are_authorized_and_rendered_at_the_native_boun
             None,
             None,
             secret_request("secret-bearer", input, secret_use),
+            AssetInputs::default(),
         )
         .await
         .expect("dual-authorized invocation completes");
-    assert_eq!(result.outcome, InvocationOutcome::Succeeded);
+    assert_eq!(result.result.outcome, InvocationOutcome::Succeeded);
     let wire = String::from_utf8(received.recv().expect("request recorded"))
         .expect("request headers are text");
     assert!(
@@ -978,10 +997,11 @@ async fn a_bearer_and_a_basic_use_are_authorized_and_rendered_at_the_native_boun
             None,
             None,
             secret_request("secret-basic", input, secret_use),
+            AssetInputs::default(),
         )
         .await
         .expect("dual-authorized invocation completes");
-    assert_eq!(result.outcome, InvocationOutcome::Succeeded);
+    assert_eq!(result.result.outcome, InvocationOutcome::Succeeded);
     let wire = String::from_utf8(received.recv().expect("request recorded"))
         .expect("request headers are text");
     assert!(
@@ -1033,15 +1053,20 @@ async fn a_proposal_is_refused_without_a_binding_for_its_exact_sink_and_username
                 None,
                 None,
                 secret_request(&format!("secret-{name}"), input.clone(), basic_use.clone()),
+                AssetInputs::default(),
             )
             .await
             .expect("a refusal is durably accounted");
         refused.push((name, result));
     }
     for (name, result) in refused {
-        assert_eq!(result.outcome, InvocationOutcome::Denied, "{name}");
-        assert_eq!(result.error.as_deref(), Some("secret-denied"), "{name}");
-        assert!(result.output.is_none(), "{name}");
+        assert_eq!(result.result.outcome, InvocationOutcome::Denied, "{name}");
+        assert_eq!(
+            result.result.error.as_deref(),
+            Some("secret-denied"),
+            "{name}"
+        );
+        assert!(result.result.output.is_none(), "{name}");
     }
 
     // Without a secret catalog at all the same proposal is refused identically, so an operator who
@@ -1089,11 +1114,12 @@ async fn a_proposal_is_refused_without_a_binding_for_its_exact_sink_and_username
             None,
             None,
             secret_request("secret-unbound", input, basic_use),
+            AssetInputs::default(),
         )
         .await
         .expect("a refusal is durably accounted");
-    assert_eq!(result.outcome, InvocationOutcome::Denied);
-    assert_eq!(result.error.as_deref(), Some("secret-denied"));
+    assert_eq!(result.result.outcome, InvocationOutcome::Denied);
+    assert_eq!(result.result.error.as_deref(), Some("secret-denied"));
 
     let serialized = serde_json::to_string(&audit.records().await).expect("audit serializes");
     assert!(!serialized.contains("drn-secret-never-visible"));
