@@ -16,17 +16,17 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 clap = { version = "=4.6.6", features = ["derive"] }
 schemars = "=1.2.2"
-dekopon-provider-sdk = { git = "https://github.com/dekopon-agents/dekopon", rev = "3a3502f7055794d0b402cc52ad124c2087581716" }
+dekopon-provider-sdk = { git = "https://github.com/dekopon-agents/dekopon", rev = "765d72149ab157e1095d3dad891bdd30d83c88cf" }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 
 [dev-dependencies]
-dekopon-provider-sdk-testkit = { git = "https://github.com/dekopon-agents/dekopon", rev = "3a3502f7055794d0b402cc52ad124c2087581716" }
-dekopon-broker-host = { git = "https://github.com/dekopon-agents/dekopon", rev = "3a3502f7055794d0b402cc52ad124c2087581716" }
-dekopon-broker = { git = "https://github.com/dekopon-agents/dekopon", rev = "3a3502f7055794d0b402cc52ad124c2087581716" }
-dekopon-broker-protocol = { git = "https://github.com/dekopon-agents/dekopon", rev = "3a3502f7055794d0b402cc52ad124c2087581716" }
-dekopon-capability = { git = "https://github.com/dekopon-agents/dekopon", rev = "3a3502f7055794d0b402cc52ad124c2087581716" }
-dekopon-core = { git = "https://github.com/dekopon-agents/dekopon", rev = "3a3502f7055794d0b402cc52ad124c2087581716" }
+dekopon-provider-sdk-testkit = { git = "https://github.com/dekopon-agents/dekopon", rev = "765d72149ab157e1095d3dad891bdd30d83c88cf" }
+dekopon-broker-host = { git = "https://github.com/dekopon-agents/dekopon", rev = "765d72149ab157e1095d3dad891bdd30d83c88cf" }
+dekopon-broker = { git = "https://github.com/dekopon-agents/dekopon", rev = "765d72149ab157e1095d3dad891bdd30d83c88cf" }
+dekopon-broker-protocol = { git = "https://github.com/dekopon-agents/dekopon", rev = "765d72149ab157e1095d3dad891bdd30d83c88cf" }
+dekopon-capability = { git = "https://github.com/dekopon-agents/dekopon", rev = "765d72149ab157e1095d3dad891bdd30d83c88cf" }
+dekopon-core = { git = "https://github.com/dekopon-agents/dekopon", rev = "765d72149ab157e1095d3dad891bdd30d83c88cf" }
 async-trait = "=0.1.92"
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "time"] }
 

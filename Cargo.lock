@@ -764,8 +764,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-broker"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "async-trait",
  "dekopon-broker-host",
@@ -785,8 +785,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-broker-host"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "dekopon-broker-protocol",
  "dekopon-capability",
@@ -808,8 +808,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-broker-protocol"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "dekopon-capability",
  "dekopon-core",
@@ -823,8 +823,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-capability"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "dekopon-core",
  "serde",
@@ -834,8 +834,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-core"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "base64 0.23.1",
  "libc",
@@ -865,8 +865,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-http-host"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -886,8 +886,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-policy"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "cedar-policy",
  "dekopon-capability",
@@ -899,8 +899,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-provider-sdk"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "clap",
  "dekopon-capability",
@@ -913,8 +913,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-provider-sdk-testkit"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "dekopon-broker-host",
  "dekopon-capability",
@@ -933,8 +933,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-storage-host"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "dekopon-capability",
  "dekopon-core",
@@ -950,8 +950,8 @@ dependencies = [
 
 [[package]]
 name = "dekopon-telemetry"
-version = "0.30.0"
-source = "git+https://github.com/dekopon-agents/dekopon?rev=3a3502f7055794d0b402cc52ad124c2087581716#3a3502f7055794d0b402cc52ad124c2087581716"
+version = "0.31.0"
+source = "git+https://github.com/dekopon-agents/dekopon?rev=765d72149ab157e1095d3dad891bdd30d83c88cf#765d72149ab157e1095d3dad891bdd30d83c88cf"
 dependencies = [
  "opentelemetry",
  "parking_lot",
