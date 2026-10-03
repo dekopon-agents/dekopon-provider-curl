@@ -101,17 +101,14 @@ fn native_get_preserves_headers_and_bodyless_request() {
         "example.com",
         "GET",
         Response {
-            status: 418,
+            status: 200,
             headers: vec![Header::text("x-test", "one").unwrap()],
             body: b"body".to_vec(),
         },
     ));
     let output = native.call("curl.get", &input.to_string());
     assert_eq!(output.status, 0, "{}", output.stderr);
-    let decoded: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(decoded["status"], 418);
-    assert_eq!(decoded["bodyText"], "body");
-    assert_eq!(decoded["bodyBase64"], "Ym9keQ==");
+    assert_eq!(output.stdout, b"body");
     let requests = native.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].method, "GET");
@@ -200,9 +197,6 @@ fn real_component_conforms_and_broker_grant_is_exact() -> Result<(), Box<dyn std
     assert_eq!(output.http_calls.len(), 1);
     assert_eq!(output.http_calls[0].method, "GET");
     assert_eq!(output.http_calls[0].status, Some(200));
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&output.stdout)?["bodyText"],
-        "ok"
-    );
+    assert_eq!(output.stdout, b"ok");
     Ok(())
 }

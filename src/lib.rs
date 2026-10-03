@@ -3,26 +3,22 @@
 mod command;
 mod uri;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use dekopon_provider_sdk::provider::{
     self, Capability, Code, Failure, Http, Proposal, Provider, Stdout, Usage,
 };
-use dekopon_provider_sdk::provider::{Header, HttpError, HttpErrorCode, Request, Response, method};
+use dekopon_provider_sdk::provider::{
+    Header, HttpError, HttpErrorCode, Request, SpliceError, method,
+};
 use dekopon_provider_sdk::{EffectKind, RiskLevel};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::{fmt, io::Write};
+use std::{borrow::Cow, fmt};
 
 const USER_AGENT: &str = concat!("dekopon-provider-curl/", env!("CARGO_PKG_VERSION"));
 const MAX_REQUEST_HEADERS: usize = 32;
 const MAX_HEADER_NAME_BYTES: usize = 64;
 const MAX_HEADER_VALUE_BYTES: usize = 4_096;
 const MAX_REQUEST_HEADER_BYTES: usize = 16_384;
-const MAX_RESPONSE_HEADERS: usize = 128;
-const MAX_RESPONSE_HEADER_BYTES: usize = 65_536;
-const MAX_RETURNED_BODY_BYTES: usize = 65_536;
-const MAX_BODY_TEXT_JSON_BYTES: usize = 131_072;
-const MAX_SUCCESS_ENVELOPE_BYTES: usize = 524_288;
 const ALLOWED_HEADERS: [&str; 6] = [
     "accept",
     "accept-language",
@@ -86,25 +82,31 @@ struct InputHeader {
 /// A fixed, credential-free invocation failure.
 pub struct CurlError {
     code: Code,
-    message: &'static str,
+    message: Cow<'static, str>,
 }
 impl CurlError {
     fn new(code: &'static str, message: &'static str) -> Self {
         Self {
             code: Code::new(code),
-            message,
+            message: message.into(),
         }
     }
     fn usage(message: &'static str) -> Self {
         Self {
             code: Code::USAGE,
-            message,
+            message: message.into(),
+        }
+    }
+    fn http_status(status: u16) -> Self {
+        Self {
+            code: Code::new("http-status").exiting(22),
+            message: format!("curl: HTTP status {status}").into(),
         }
     }
 }
 impl fmt::Display for CurlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message)
+        f.write_str(&self.message)
     }
 }
 impl Failure for CurlError {
@@ -125,116 +127,18 @@ impl Capability for Get {
     type Error = CurlError;
 
     fn run(input: Self::Input, http: Http, out: &mut Stdout) -> Result<(), Self::Error> {
-        // A bounded buffered-to-stdout bridge for CU-a. CU-b replaces this with open/splice.
-        let response = invoke_with(input, |request| http.send(request))?;
-        let mut bridge = project_response(response)?;
-        bridge.push(b'\n');
-        out.write_all(&bridge)
-            .map_err(|_| CurlError::new("output-failed", "stdout write failed"))
-    }
-}
-
-// CU-b deletes this bounded JSON-to-stdout bridge when open/splice replaces buffered send.
-fn project_response(response: Response) -> Result<Vec<u8>, CurlError> {
-    let invalid = || {
-        CurlError::new(
-            "invalid-response",
-            "broker HTTP response violated provider bounds",
-        )
-    };
-    if response.headers.len() > MAX_RESPONSE_HEADERS {
-        return Err(invalid());
-    }
-    let mut header_bytes = 0_usize;
-    let mut headers = Vec::new();
-    for header in response.headers {
-        header_bytes = header_bytes
-            .checked_add(header.name.len() + header.value.len() + 4)
-            .filter(|n| *n <= MAX_RESPONSE_HEADER_BYTES)
-            .ok_or_else(invalid)?;
-        if !is_token(&header.name) {
-            return Err(invalid());
+        let request = build_request(input)?;
+        let response = http.open(request).map_err(map_http_error)?;
+        // Reject HTTP errors before touching the body, even if it contains untrusted bytes.
+        if response.status >= 400 {
+            return Err(CurlError::http_status(response.status));
         }
-        let mut entry = serde_json::json!({
-            "name": header.name, "valueBase64": STANDARD.encode(&header.value),
-        });
-        if let Ok(value) = std::str::from_utf8(&header.value) {
-            entry["valueText"] = value.into();
-        }
-        headers.push(entry);
+        response.body.splice(out).map_err(|error| match error {
+            SpliceError::Closed => CurlError::new("output-closed", "stdout's reader has gone"),
+            SpliceError::Http(error) => map_http_error(error),
+        })?;
+        Ok(())
     }
-    let body_bytes = response.body.len();
-    let prefix = bounded_body_prefix(&response.body);
-    let body_text = std::str::from_utf8(prefix).ok().filter(|text| {
-        serde_json::to_vec(text).is_ok_and(|bytes| bytes.len() <= MAX_BODY_TEXT_JSON_BYTES)
-    });
-    let mut output = serde_json::json!({
-        "status": response.status, "headers": headers,
-        "bodyBase64": STANDARD.encode(prefix),
-        "bodyBytes": body_bytes, "bodyReturnedBytes": prefix.len(),
-        "bodyTruncated": prefix.len() < body_bytes,
-    });
-    if let Some(text) = body_text {
-        output["bodyText"] = text.into();
-    }
-    let mut serialized = serde_json::to_vec(&output).map_err(|_| invalid())?;
-    if serialized.len() > MAX_SUCCESS_ENVELOPE_BYTES {
-        output.as_object_mut().expect("output").remove("bodyText");
-        for header in output["headers"].as_array_mut().expect("headers") {
-            header.as_object_mut().expect("header").remove("valueText");
-        }
-        serialized = serde_json::to_vec(&output).map_err(|_| invalid())?;
-    }
-    if serialized.len() > MAX_SUCCESS_ENVELOPE_BYTES {
-        return Err(invalid());
-    }
-    Ok(serialized)
-}
-
-fn bounded_body_prefix(body: &[u8]) -> &[u8] {
-    if body.len() <= MAX_RETURNED_BODY_BYTES {
-        return body;
-    }
-    let Ok(text) = std::str::from_utf8(body) else {
-        return &body[..MAX_RETURNED_BODY_BYTES];
-    };
-    let mut end = MAX_RETURNED_BODY_BYTES;
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    &body[..end]
-}
-
-fn is_token(value: &str) -> bool {
-    !value.is_empty()
-        && value.bytes().all(|b| {
-            b.is_ascii_alphanumeric()
-                || matches!(
-                    b,
-                    b'!' | b'#'
-                        | b'$'
-                        | b'%'
-                        | b'&'
-                        | b'\''
-                        | b'*'
-                        | b'+'
-                        | b'-'
-                        | b'.'
-                        | b'^'
-                        | b'_'
-                        | b'`'
-                        | b'|'
-                        | b'~'
-                )
-        })
-}
-
-fn invoke_with<F>(input: GetInput, mut send: F) -> Result<Response, CurlError>
-where
-    F: FnMut(Request) -> Result<Response, HttpError>,
-{
-    let request = build_request(input)?;
-    send(request).map_err(map_http_error)
 }
 
 fn build_request(input: GetInput) -> Result<Request, CurlError> {

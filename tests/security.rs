@@ -1,5 +1,4 @@
 //! Migrated pre-K guest security, request, resource, and failure assertions.
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use dekopon_curl_provider::Curl;
 use dekopon_provider_sdk::provider::{Header, Response};
 use dekopon_provider_sdk_testkit::{HttpScript, Native, NativeOutput};
@@ -26,10 +25,6 @@ fn rejected(input: Value) -> String {
     assert!(result.stdout.is_empty());
     assert!(calls.is_empty(), "no network before full validation");
     result.stderr
-}
-fn decoded(result: &NativeOutput) -> Value {
-    assert_eq!(result.status, 0, "{}", result.stderr);
-    serde_json::from_slice(&result.stdout).unwrap()
 }
 #[test]
 fn closed_input_method_and_uri_validation_precede_all_network() {
@@ -161,8 +156,8 @@ fn header_allowlist_order_duplicates_and_limits_are_enforced() {
     rejected(json!({"uri":"https://example.com/", "headers":over_bytes}));
 }
 #[test]
-fn statuses_redirects_binary_and_duplicate_headers_are_data_not_retry() {
-    for status in [100, 200, 204, 299, 301, 302, 399, 400, 404, 499, 500, 599] {
+fn statuses_redirects_and_binary_bodies_are_not_retried() {
+    for status in [200, 204, 299, 301, 302, 399, 400, 404, 499, 500, 599] {
         let (result, calls) = scripted(
             json!({"uri":"https://example.com/private?token=sentinel"}),
             Response {
@@ -182,52 +177,25 @@ fn statuses_redirects_binary_and_duplicate_headers_are_data_not_retry() {
         assert_eq!(calls[0].uri, "https://example.com/private?token=sentinel");
         assert_eq!(calls[0].method, "GET");
         assert!(calls[0].body.is_empty());
-        let json = decoded(&result);
-        assert_eq!(json["status"], status);
-        assert_eq!(json["bodyBase64"], "AAH/");
-        assert_eq!(json["bodyBytes"], 3);
-        assert_eq!(json["headers"][1]["valueBase64"], "/wA=");
-        assert!(json["headers"][1].get("valueText").is_none());
-        assert_eq!(json["headers"][2]["valueBase64"], "dHdv");
+        if status >= 400 {
+            assert_eq!(result.status, 22);
+            assert!(result.stdout.is_empty());
+        } else {
+            assert_eq!(result.status, 0, "{status}: {}", result.stderr);
+            assert_eq!(result.stdout, [0, 1, 0xff]);
+        }
     }
 }
 #[test]
-fn response_projection_stays_bounded_and_preserves_binary_prefix() {
+fn streamed_binary_body_is_complete_without_a_guest_prefix_cut() {
     let body = vec![0xff; 262_144];
-    let (result, _) = scripted(json!({"uri":"https://example.com/"}), response(200, body));
-    let json = decoded(&result);
-    assert_eq!(json["bodyBytes"], 262_144);
-    assert_eq!(json["bodyReturnedBytes"], 65_536);
-    assert_eq!(json["bodyTruncated"], true);
-    assert_eq!(
-        STANDARD
-            .decode(json["bodyBase64"].as_str().unwrap())
-            .unwrap(),
-        vec![0xff; 65_536]
-    );
-    assert!(result.stdout.len() <= 524_289);
-    let mut split_valid = vec![b'a'; 65_535];
-    split_valid.extend_from_slice("éz".as_bytes());
-    let (result, _) = scripted(
+    let (result, calls) = scripted(
         json!({"uri":"https://example.com/"}),
-        response(200, split_valid),
+        response(200, body.clone()),
     );
-    let output = decoded(&result);
-    assert_eq!(
-        output["bodyReturnedBytes"], 65_535,
-        "do not split a valid UTF-8 scalar"
-    );
-    let headers = (0..129).map(|_| Header::text("x", "").unwrap()).collect();
-    let (invalid, _) = scripted(
-        json!({"uri":"https://example.com/"}),
-        Response {
-            status: 200,
-            headers,
-            body: vec![],
-        },
-    );
-    assert_ne!(invalid.status, 0);
-    assert!(invalid.stdout.is_empty());
+    assert_eq!(result.status, 0, "{}", result.stderr);
+    assert_eq!(result.stdout, body);
+    assert_eq!(calls.len(), 1);
 }
 #[test]
 fn piped_headers_are_interleaved_and_failed_pipes_send_nothing() {

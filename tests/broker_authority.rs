@@ -172,8 +172,7 @@ async fn cedar_denies_before_http_and_exact_get_is_audited_without_payload() {
     assert_eq!(allowed.result.outcome, InvocationOutcome::Succeeded);
     let mut bytes = Vec::new();
     peer.read_to_end(&mut bytes).unwrap();
-    let output: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(output["bodyText"], "body-secret");
+    assert_eq!(bytes, b"body-secret");
     let wire = received.recv_timeout(Duration::from_secs(5)).unwrap();
     assert!(wire.starts_with(b"GET /private-path?query-secret=yes HTTP/1.1\r\n"));
     assert!(wire.ends_with(b"\r\n\r\n"), "GET has no body");

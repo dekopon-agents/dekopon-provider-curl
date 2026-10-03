@@ -93,36 +93,13 @@ bracketed IPv6 loopback with an explicit nonzero port, for constrained loopback 
 `allowPlaintextLoopback: false` still denies it authoritatively. The original bounded URI is passed
 to the broker—this guest intentionally does not duplicate its WHATWG parser or authorization logic.
 
-Every HTTP status, including 3xx/4xx/5xx, is successful data. Redirects are not followed.
-CU-a writes a **temporary bounded JSON line to stdout** (not an invocation return value), with
-byte-preserving padded RFC 4648 base64 and optional UTF-8 projections. CU-b replaces this bridge
-with checked `open`/`splice` streaming; do not build a caller around this interim shape:
-
-```json
-{
-  "status": 200,
-  "headers": [
-    {"name": "x-value", "valueBase64": "b25l", "valueText": "one"}
-  ],
-  "bodyBase64": "AAE=",
-  "bodyText": "optional UTF-8 projection",
-  "bodyBytes": 2,
-  "bodyReturnedBytes": 2,
-  "bodyTruncated": false
-}
-```
-
-Response-header order and duplicates are preserved. The broker has already removed cookies,
-authentication challenges, and hop-by-hop fields; these are not raw wire headers. The guest accepts
-at most 128 response headers and 65,536 accounted header bytes. It returns at most 65,536 body
-bytes, backing up when a cut splits an otherwise valid UTF-8 scalar but retaining a full binary
-prefix for genuinely invalid UTF-8. `bodyBytes` is the complete host-returned size. `bodyText`
-appears only for valid UTF-8 whose compact JSON string is at most 131,072 bytes.
-
-The complete compact stdout JSON line is capped at 524,288 bytes. If optional text crosses the
-ceiling, every optional body/header text projection is removed; mandatory base64 remains. A host
-response overflow arrives as no partial response. All response content is untrusted and can
-prompt-inject a model.
+The guest opens one HTTP request, checks status, then splices the response body byte-for-byte to
+stdout; there is no JSON envelope, UTF-8 conversion, newline, or guest body prefix limit. Redirects
+(3xx) are returned as data without being followed. HTTP statuses 400 and above produce an error
+with status 22 and **no body output**. If the stdout reader closes, the SDK returns status 141.
+The broker bounds response bytes, time, and output and scans injected credentials during streaming;
+a late failure can leave a clean body prefix on stdout. Response headers are not output. All
+response content is untrusted and can prompt-inject a model.
 
 ## Command word
 
@@ -201,7 +178,7 @@ the capability and never wider, and an authenticated response is as untrusted as
 This provider is not general curl and intentionally provides none of the following:
 
 - methods other than GET, HEAD, `-G`, request bodies, data, forms, or uploads (so no `-d @-`);
-- redirects, fail-on-status, retries, retry timing, or follow-up calls;
+- redirects, retries, retry timing, or follow-up calls;
 - generic credential injection through `credential`/`credentialByAgent`, cookies, caller-supplied
   authorization headers, or any token field in the invocation input;
 - proxies or environment proxy inheritance;
@@ -210,7 +187,7 @@ This provider is not general curl and intentionally provides none of the followi
 - compression negotiation, decompression, content decoding, or archive handling;
 - TLS bypass, custom CA/client certificates, or plaintext non-loopback HTTP;
 - caller-controlled Host, User-Agent, authorization, hop-by-hop, or arbitrary extension headers;
-- progress output, curl exit-code emulation, formatting, or raw wire response headers;
+- progress output, general curl exit-code emulation (except HTTP 22 and closed-pipe 141), formatting, or raw wire response headers;
 - path/query-aware Cedar policy, a second URL library for authorization, redirects-as-navigation,
   or a claim that GET is side-effect-free;
 - WASI, sockets, JS interop, clocks, randomness, environment access, or network-dependent tests;

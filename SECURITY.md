@@ -33,5 +33,6 @@ which is the failure a binding's exact path exists to prevent. The provider also
 caller-controlled authorization, cookies, tokens, and credential fields in its input.
 
 Responses are untrusted byte strings. They can contain secrets, malicious formats, or prompt
-injection. CU-a's bounded JSON-to-stdout bridge is interim and CU-b replaces it with the
-status-checked `open`/`splice` path. Base64 is preservation, not validation or sanitization.
+injection. The guest checks HTTP status before splicing the body to stdout. The broker scans
+injected secrets and enforces response/output bounds during streaming; a late failure may leave
+a clean prefix on stdout, but a reflected credential is not delivered.

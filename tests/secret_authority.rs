@@ -94,6 +94,41 @@ fn mock_http() -> (String, mpsc::Receiver<Vec<u8>>, thread::JoinHandle<()>) {
     });
     (format!("127.0.0.1:{}", address.port()), rx, server)
 }
+fn mock_late_echo() -> (String, mpsc::Receiver<Vec<u8>>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (tx, rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut request = Vec::new();
+        let mut buffer = [0; 1024];
+        while request.windows(4).all(|window| window != b"\r\n\r\n") {
+            let n = stream.read(&mut buffer).unwrap();
+            if n == 0 {
+                break;
+            }
+            request.extend_from_slice(&buffer[..n]);
+        }
+        tx.send(request).unwrap();
+        let mut first = vec![b'a'; 64];
+        first.extend_from_slice(&SECRET_BYTES[..8]);
+        let mut second = SECRET_BYTES[8..].to_vec();
+        second.extend_from_slice(b"tail");
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            first.len() + second.len()
+        );
+        stream.write_all(head.as_bytes()).unwrap();
+        stream.write_all(&first).unwrap();
+        stream.flush().unwrap();
+        thread::sleep(Duration::from_millis(75));
+        let _ = stream.write_all(&second);
+    });
+    (format!("127.0.0.1:{}", address.port()), rx, server)
+}
 fn streams() -> (AssetInputs, UnixStream) {
     let (stdout, peer) = UnixStream::pair().unwrap();
     (
@@ -259,10 +294,7 @@ async fn bearer_and_basic_secrets_require_policy_and_binding_and_never_enter_gue
         );
         let mut text = Vec::new();
         stdout.read_to_end(&mut text).unwrap();
-        assert_eq!(
-            serde_json::from_slice::<Value>(&text).unwrap()["bodyText"],
-            "ok"
-        );
+        assert_eq!(text, b"ok");
         let wire =
             String::from_utf8(received.recv_timeout(Duration::from_secs(5)).unwrap()).unwrap();
         assert!(wire.starts_with(&format!("GET {PATH} HTTP/1.1\r\n")));
@@ -321,4 +353,56 @@ async fn a_secret_proposal_without_exact_sink_username_or_catalog_is_denied_befo
     }
     let records = serde_json::to_string(&audit.records()).unwrap();
     assert!(!records.contains("drn-secret-never-visible"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_late_echo_across_body_chunks_reaches_neither_stdout_nor_audit() {
+    let (host, received, server) = mock_late_echo();
+    let audit = Arc::new(InMemoryAuditLog::new(16).unwrap());
+    let broker = broker(
+        &host,
+        Some((SecretSinkKind::HttpBearer, None)),
+        Arc::clone(&audit),
+    )
+    .await;
+    let uri = format!("http://{host}{PATH}");
+    let (input, secret_use) = proposal(&broker, &["--oauth2-bearer", SECRET, &uri]).await;
+    let (assets, mut stdout) = streams();
+    let result = broker
+        .invoke(
+            &context(),
+            None,
+            None,
+            request("secret-late-echo", input, secret_use),
+            assets,
+        )
+        .await
+        .unwrap();
+    let mut bytes = Vec::new();
+    stdout.read_to_end(&mut bytes).unwrap();
+    assert_eq!(
+        result.result.outcome,
+        InvocationOutcome::Failed,
+        "{:?}",
+        result.result.error
+    );
+    assert!(
+        !bytes.is_empty(),
+        "a scanned clean prefix should be delivered"
+    );
+    assert!(
+        bytes.iter().all(|&b| b == b'a'),
+        "no injected credential byte reaches stdout"
+    );
+    assert!(bytes.len() <= 64);
+    assert!(
+        received
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .starts_with(format!("GET {PATH}").as_bytes())
+    );
+    server.join().unwrap();
+    let records = serde_json::to_string(&audit.records()).unwrap();
+    assert!(!records.contains("drn-secret-never-visible"));
+    assert!(!records.contains("dXNlci1hOmRybi1zZWNyZXQtbmV2ZXItdmlzaWJsZQ=="));
 }

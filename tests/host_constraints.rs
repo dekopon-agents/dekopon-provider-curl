@@ -271,9 +271,9 @@ async fn redirect_is_data_not_a_second_request() {
     assert_eq!(output.http_calls.len(), 1);
     let mut bytes = Vec::new();
     peer.read_to_end(&mut bytes).unwrap();
-    assert_eq!(
-        serde_json::from_slice::<Value>(&bytes).unwrap()["status"],
-        302
+    assert!(
+        bytes.is_empty(),
+        "302 has an empty body, not a JSON envelope"
     );
     assert!(
         request
@@ -322,10 +322,7 @@ async fn checked_component_stays_within_old_committed_memory_and_fuel_ceiling() 
         .await;
     let bytes = reader.join().unwrap();
     assert!(result.is_ok(), "{result:?}");
-    assert_eq!(
-        serde_json::from_slice::<Value>(&bytes).unwrap()["bodyBytes"],
-        190_000
-    );
+    assert_eq!(bytes, vec![b'x'; 190_000]);
     assert!(
         request
             .recv_timeout(Duration::from_secs(1))
