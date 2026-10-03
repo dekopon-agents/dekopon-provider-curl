@@ -246,6 +246,77 @@ async fn response_timeout_and_overflow_are_terminal_without_partial_stdout() {
     server.join().unwrap();
 }
 #[tokio::test(flavor = "multi_thread")]
+async fn broker_checks_response_header_aggregate_boundary_and_malformed_wire() {
+    assert_eq!(BrokerHostLimits::default().max_http_header_bytes, 65_536);
+    // Real HTTP/1 parsers can reject a >64 KiB wire header block before it reaches
+    // the broker ceiling. Use a smaller ceiling to test its exact inclusive bound.
+    let limits = BrokerHostLimits {
+        max_http_header_bytes: 1024,
+        ..BrokerHostLimits::default()
+    };
+    let registry = BrokerProviderRegistry::load([component()], limits)
+        .await
+        .unwrap();
+    // Host accounting: 16 baseline + (14+1+4) Content-Length + (10+5+4)
+    // Connection + (1+N+4) X = 59+N.
+    for (suffix, accepted) in [(1024 - 59, true), (1025 - 59, false)] {
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\nx: {}\r\n\r\n",
+            "v".repeat(suffix)
+        )
+        .into_bytes();
+        let (host, received, server) = mock_http(response, Duration::ZERO);
+        let (assets, mut peer) = streams();
+        let outcome = registry
+            .invoke(
+                authorized(
+                    &format!("headers-{suffix}"),
+                    json!({"uri":format!("http://{host}/headers")}),
+                    constraints(&host),
+                ),
+                None,
+                assets,
+            )
+            .await;
+        let mut stdout = Vec::new();
+        peer.read_to_end(&mut stdout).unwrap();
+        if accepted {
+            assert!(outcome.is_ok(), "exact header ceiling: {outcome:?}");
+        } else {
+            assert!(
+                outcome.is_err(),
+                "header ceiling + 1 must fail: {outcome:?}"
+            );
+        }
+        assert!(stdout.is_empty());
+        received.recv_timeout(Duration::from_secs(5)).unwrap();
+        server.join().unwrap();
+    }
+    let (host, received, server) = mock_http(
+        b"HTTP/1.1 200 OK\r\nbad name: secret-sentinel\r\nContent-Length: 4\r\n\r\nbody".to_vec(),
+        Duration::ZERO,
+    );
+    let (assets, mut peer) = streams();
+    let outcome = registry
+        .invoke(
+            authorized(
+                "malformed-wire-header",
+                json!({"uri":format!("http://{host}/bad")}),
+                constraints(&host),
+            ),
+            None,
+            assets,
+        )
+        .await;
+    let mut stdout = Vec::new();
+    peer.read_to_end(&mut stdout).unwrap();
+    assert!(outcome.is_err(), "malformed header must fail: {outcome:?}");
+    assert!(stdout.is_empty());
+    assert!(!format!("{outcome:?}").contains("secret-sentinel"));
+    received.recv_timeout(Duration::from_secs(5)).unwrap();
+    server.join().unwrap();
+}
+#[tokio::test(flavor = "multi_thread")]
 async fn redirect_is_data_not_a_second_request() {
     let target = TcpListener::bind("127.0.0.1:0").unwrap();
     target.set_nonblocking(true).unwrap();

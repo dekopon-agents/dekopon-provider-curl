@@ -54,8 +54,8 @@ with its own policy and its own owner-authored binding; see [Credentials](#crede
    otherwise-permitted GET path/query on that authority. Use a dedicated authority when that is too
    broad. A secret-use binding is the narrower object: it does constrain path and query, but only
    for where the secret it names may go, never for where the capability may go.
-2. **Duplicate raw JSON keys cannot be rejected after SDK decoding.** `serde_json` retains
-   the last value; the typed input rejects unknown fields after decoding.
+2. **Typed SDK input rejects duplicate raw JSON keys.** Direct deserialization into the
+   closed input type refuses duplicates before invocation; unknown fields are also refused.
 
 ## Invocation
 
@@ -124,8 +124,10 @@ curl -h|--help
 Quiet flags are documented no-ops because structured execution has no progress meter. Method values
 are separate, case-insensitive `GET`, normalized uppercase, and may appear once. Headers are
 separate values, split at the first colon, trimmed around name/value, and preserve later colons,
-order, and duplicates. Exactly one URL, at most 70 argv entries, at most 24,576 argv bytes
-and separately at most 24,576 piped header bytes, and at most 32 headers are accepted.
+order, and duplicates. Exactly one URL, at most 70 argv entries, at most 24,576 bytes for
+argv **plus raw piped headers combined**, and at most 32 headers are accepted. The proposal
+carries its argv byte count; authorized invocation reads at most the remaining budget plus one
+byte to detect overflow, counting CRLF and missing final terminators exactly.
 
 `-H @-` reads headers from the piped value, one `Name: value` per line, blank lines skipped, in
 place of one argv header. That is upstream curl's `@-` spelling, and it is the only stdin this
@@ -192,7 +194,7 @@ This provider is not general curl and intentionally provides none of the followi
   or a claim that GET is side-effect-free;
 - WASI, sockets, JS interop, clocks, randomness, environment access, or network-dependent tests;
 - sanitizing, trusting, interpreting, or prompt-safety-classifying fetched content;
-- rejecting duplicate raw JSON keys after the SDK has decoded them.
+- accepting duplicate raw JSON keys in the typed invocation input.
 
 Generic credentialed GET is excluded because an arbitrary allowed path can reflect a
 broker-injected credential in its response. A DRN named on argv is not that: it is refused unless

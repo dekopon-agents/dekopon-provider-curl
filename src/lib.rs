@@ -12,7 +12,7 @@ use dekopon_provider_sdk::provider::{
 use dekopon_provider_sdk::{EffectKind, RiskLevel};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, fmt};
+use std::{borrow::Cow, fmt, io::Read};
 
 const USER_AGENT: &str = concat!("dekopon-provider-curl/", env!("CARGO_PKG_VERSION"));
 const MAX_REQUEST_HEADERS: usize = 32;
@@ -61,6 +61,9 @@ pub struct GetInput {
     stdin_headers: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stdin_header_index: Option<usize>,
+    /// Original argv byte count, set by run-command when -H @- is proposed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    argv_bytes: Option<usize>,
 }
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 enum GetMethod {
@@ -157,23 +160,35 @@ fn build_request(input: GetInput) -> Result<Request, CurlError> {
     if input.stdin_headers {
         let stdin = provider::stdin()
             .ok_or_else(|| CurlError::usage("curl: -H @-: nothing was piped in"))?;
-        let mut consumed = 0_usize;
+        let remaining = command::MAX_INPUT_BYTES
+            .checked_sub(input.argv_bytes.unwrap_or(0))
+            .ok_or_else(|| CurlError::usage("curl: -H @-: piped headers exceed input limit"))?;
+        // Read at most budget + 1 bytes, before any UTF-8 conversion or line allocation.
+        // The extra byte distinguishes an exact-boundary EOF from an overflow.
+        let mut raw = Vec::new();
+        stdin
+            .take((remaining + 1) as u64)
+            .read_to_end(&mut raw)
+            .map_err(|_| CurlError::usage("curl: -H @-: invalid piped headers"))?;
+        if raw.len() > remaining {
+            return Err(CurlError::usage(
+                "curl: -H @-: piped headers exceed input limit",
+            ));
+        }
+        if raw.is_empty() {
+            return Err(CurlError::usage("curl: -H @-: nothing was piped in"));
+        }
+        let text = std::str::from_utf8(&raw)
+            .map_err(|_| CurlError::usage("curl: -H @-: invalid piped headers"))?;
         let mut piped_headers = Vec::new();
-        for line in stdin.lines() {
-            let line = line.map_err(|_| CurlError::usage("curl: -H @-: invalid piped headers"))?;
-            consumed = consumed
-                .checked_add(line.len() + 1)
-                .filter(|n| *n <= command::MAX_INPUT_BYTES)
-                .ok_or_else(|| CurlError::usage("curl: -H @-: piped headers exceed input limit"))?;
+        for line in text.split_terminator('\n') {
+            let line = line.strip_suffix('\r').unwrap_or(line);
             if !line.trim().is_empty() {
                 piped_headers.push(
-                    command::parse_header(&line)
+                    command::parse_header(line)
                         .map_err(|_| CurlError::usage("curl: -H @-: invalid piped headers"))?,
                 );
             }
-        }
-        if consumed == 0 {
-            return Err(CurlError::usage("curl: -H @-: nothing was piped in"));
         }
         let index = input.stdin_header_index.unwrap_or(headers.len());
         if index > headers.len() {
@@ -182,7 +197,7 @@ fn build_request(input: GetInput) -> Result<Request, CurlError> {
             ));
         }
         headers.splice(index..index, piped_headers);
-    } else if input.stdin_header_index.is_some() {
+    } else if input.stdin_header_index.is_some() || input.argv_bytes.is_some() {
         return Err(CurlError::usage(
             "input does not match the curl.get contract",
         ));

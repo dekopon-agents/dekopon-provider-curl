@@ -1,5 +1,6 @@
 //! CU-b red/green contract: no JSON, status-before-body, and guest pipe semantics.
 use dekopon_curl_provider::Curl;
+use dekopon_provider_sdk::CommandRunOutcome;
 use dekopon_provider_sdk::provider::{
     self, Body, Header, HttpError, HttpErrorCode, NativeStdio, OpenedResponse, Port, Request,
     Response, StreamedRequest, StreamedResponse,
@@ -7,7 +8,7 @@ use dekopon_provider_sdk::provider::{
 use dekopon_provider_sdk_testkit::{Harness, HttpScript, Native, conformance};
 use serde_json::json;
 use std::{
-    io::{self, Write},
+    io::{self, Read, Write},
     path::PathBuf,
     process::{Command, Stdio},
     sync::{
@@ -31,6 +32,75 @@ fn script(status: u16, body: Vec<u8>) -> HttpScript {
             body,
         },
     )
+}
+fn proposal_with_budget(stdin_len: usize) -> serde_json::Value {
+    let url = "https://example.com/path";
+    let flag_len = 24_576 - stdin_len - url.len() - 2 - 2;
+    let flag = format!("-s{}", "S".repeat(flag_len - 2));
+    let words = vec![flag, "-H".into(), "@-".into(), url.into()];
+    let CommandRunOutcome::Proposed { input, .. } = provider::command::<Curl>(&words, true) else {
+        panic!("budgeted proposal refused");
+    };
+    input
+}
+#[test]
+fn combined_argv_and_raw_pipe_byte_limit_is_exact() {
+    for bytes in [
+        b"Accept: x".as_slice(), // no final terminator
+        b"Accept: x\n".as_slice(),
+        b"Accept: x\r\n".as_slice(),
+    ] {
+        let input = proposal_with_budget(bytes.len());
+        assert_eq!(input["argv_bytes"], 24_576 - bytes.len());
+        let native = Native::<Curl>::new()
+            .stdin(bytes.to_vec())
+            .http(script(200, vec![]));
+        let result = native.call("curl.get", &input.to_string());
+        assert_eq!(result.status, 0, "{}", result.stderr);
+        assert_eq!(native.requests().len(), 1);
+        let over = Native::<Curl>::new()
+            .stdin([bytes, b"\n"].concat())
+            .http(script(200, vec![]));
+        let result = over.call("curl.get", &input.to_string());
+        assert_eq!(
+            result.status, 2,
+            "CRLF and final terminators count as raw bytes"
+        );
+        assert!(over.requests().is_empty());
+    }
+}
+struct Measured {
+    source: io::Cursor<Vec<u8>>,
+    count: Arc<AtomicUsize>,
+}
+impl Read for Measured {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.source.read(buf)?;
+        self.count.fetch_add(n, Ordering::SeqCst);
+        Ok(n)
+    }
+}
+#[test]
+fn oversized_unterminated_line_never_reads_unbounded_input_or_calls_http() {
+    let read = Arc::new(AtomicUsize::new(0));
+    let opened = Arc::new(AtomicUsize::new(0));
+    let exit = provider::with_port(
+        OpenOnly {
+            opened: opened.clone(),
+        },
+        || {
+            provider::invoke_native::<Curl>("curl.get",
+            &json!({"uri":"https://example.com/path", "stdin_headers":true, "stdin_header_index":0}).to_string(),
+            NativeStdio { stdin: Some(Box::new(Measured { source: io::Cursor::new(vec![b'x'; 1_048_576]), count: read.clone() })), stdout: Box::new(io::sink()) })
+        },
+    );
+    assert_eq!(exit.status, 2);
+    assert_eq!(opened.load(Ordering::SeqCst), 0);
+    assert!(
+        read.load(Ordering::SeqCst) <= 24_577,
+        "read {} bytes before refusing",
+        read.load(Ordering::SeqCst)
+    );
 }
 #[test]
 fn clean_body_is_exact_bytes_not_a_json_envelope() {

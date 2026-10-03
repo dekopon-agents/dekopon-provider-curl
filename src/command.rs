@@ -16,7 +16,7 @@ const USAGE: &str = "usage: curl [-sS] [-X GET] [-H \"Name: value\"|-H @-]... [-
     after_help = "Headers are restricted to accept, accept-language, cache-control, if-modified-since, if-none-match, range.\n\
     --oauth2-bearer DRN and -u, --user USER:DRN propose public DRNs, not tokens.\n\
     The broker alone resolves and injects credentials.\n\
-    Redirects and HTTP error statuses are returned as data; no request is retried."
+    Redirects are returned as data; HTTP errors fail before body output. No request is retried."
 )]
 struct Raw {
     #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 1.., required = true)]
@@ -73,9 +73,8 @@ impl Parser for CurlArgs {}
 
 pub(crate) fn propose(args: CurlArgs, stdin_piped: bool) -> Result<Proposal<Curl>, Usage> {
     let argv = args.words;
-    if argv.len() > MAX_ARGV_ENTRIES
-        || argv.iter().map(String::len).sum::<usize>() > MAX_INPUT_BYTES
-    {
+    let argv_bytes = argv.iter().map(String::len).sum::<usize>();
+    if argv.len() > MAX_ARGV_ENTRIES || argv_bytes > MAX_INPUT_BYTES {
         return Err(Usage::new(USAGE));
     }
     let mut index = 0;
@@ -166,6 +165,7 @@ pub(crate) fn propose(args: CurlArgs, stdin_piped: bool) -> Result<Proposal<Curl
         headers,
         stdin_headers,
         stdin_header_index,
+        argv_bytes: stdin_headers.then_some(argv_bytes),
     };
     let proposal = Proposal::to::<Get>(input);
     Ok(match secret_use {
