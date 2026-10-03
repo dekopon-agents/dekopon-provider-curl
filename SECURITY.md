@@ -5,11 +5,12 @@ exists. Do not put credentials, private URLs, response data, or exploit payloads
 
 ## Trust boundary
 
-This component is broker-only. It imports `dekopon:http/client@1.0.0`; any host that does not link
-that import — every direct, non-broker host — refuses to instantiate it. The component has no WASI,
-sockets, filesystem, process, environment, clock, randomness, JS, or other ambient import.
+This component is broker-only. Its SDK-owned imports are `dekopon:http/client@1.2.0` and
+`dekopon:stdio/streams@0.1.0`; a host without those interfaces refuses to instantiate it.
+It has no asset, WASI, filesystem, process, environment, clock, randomness, JS, or ambient
+network import. The broker alone performs HTTP; stdout is an invocation stream.
 
-The guest's URI checks are defense in depth. Dekopon 0.15.0 remains authoritative for WHATWG URL
+The guest's URI checks are defense in depth. The pinned Dekopon broker remains authoritative for WHATWG URL
 parsing, canonical exact-authority matching, DNS validation, destination pinning, timeout and byte
 limits. Cedar sees capability metadata and caller identity, not URI path/query. Treat a grant for an
 authority as permission for every GET path and query this provider can send there.
@@ -32,4 +33,5 @@ which is the failure a binding's exact path exists to prevent. The provider also
 caller-controlled authorization, cookies, tokens, and credential fields in its input.
 
 Responses are untrusted byte strings. They can contain secrets, malicious formats, or prompt
-injection. Base64 is preservation, not validation or sanitization.
+injection. CU-a's bounded JSON-to-stdout bridge is interim and CU-b replaces it with the
+status-checked `open`/`splice` path. Base64 is preservation, not validation or sanitization.
