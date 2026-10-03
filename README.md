@@ -1,7 +1,7 @@
 # dekopon-provider-curl
 
 A production-bounded HTTP GET provider for
-[Dekopon](https://github.com/dekopon-agents/dekopon) core main, pinned by Git revision.
+[Dekopon](https://github.com/dekopon-agents/dekopon) core 0.31.0, pinned to published crates.
 
 | Manifest field | Value |
 |---|---|
@@ -26,7 +26,7 @@ host—refuses the component. That is expected, not an installation error. Confi
 `dekopon-brokerd`, an exact constraint set, and a separate Cedar grant. See
 [`examples/broker.yaml`](examples/broker.yaml) and [`examples/policies.cedar`](examples/policies.cedar).
 
-Supported v0.4.0 constraints are:
+Supported v0.5.0 constraints are:
 
 ```yaml
 constraintSets:
