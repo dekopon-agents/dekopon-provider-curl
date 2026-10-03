@@ -7,7 +7,6 @@ constraintSets:
     risk: Medium
     constraints:
       timeoutMs: 10000
-      maxOutputBytes: 524288
       http:
         allowedHosts:
           - api.example.com

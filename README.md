@@ -1,7 +1,7 @@
 # dekopon-provider-curl
 
 A production-bounded HTTP GET provider for
-[Dekopon](https://github.com/dekopon-agents/dekopon) 0.18.0.
+[Dekopon](https://github.com/dekopon-agents/dekopon) core 0.31.0, pinned to published crates.
 
 | Manifest field | Value |
 |---|---|
@@ -15,8 +15,9 @@ sensitive or adversarial, and broken upstreams can make GET stateful.
 
 ## Broker-only execution
 
-The component imports **exactly** `dekopon:http/client@1.1.0` and exports `describe`, `invoke`, and
-`run-command`. It imports no WASI or other interface and contains no HTTP stack. Only a separate
+The SDK-owned component imports `dekopon:http/client@1.2.0` and
+`dekopon:stdio/streams@0.1.0`; it exports `describe`, typed `invoke`, and `run-command`.
+It imports no WASI, asset, or other ambient interface and contains no HTTP stack. Only a separate
 Dekopon broker links the import and supplies authorization, canonical URL handling, DNS validation
 and pinning, streaming limits, and transport.
 
@@ -25,7 +26,7 @@ host—refuses the component. That is expected, not an installation error. Confi
 `dekopon-brokerd`, an exact constraint set, and a separate Cedar grant. See
 [`examples/broker.yaml`](examples/broker.yaml) and [`examples/policies.cedar`](examples/policies.cedar).
 
-Supported v0.4.0 constraints are:
+Supported v0.5.0 constraints are:
 
 ```yaml
 constraintSets:
@@ -35,7 +36,6 @@ constraintSets:
     risk: Medium
     constraints:
       timeoutMs: 10000
-      maxOutputBytes: 524288
       http:
         allowedHosts: [operator-selected-exact-authorities]
         allowedMethods: [GET]
@@ -46,9 +46,7 @@ constraintSets:
 ```
 
 There must be no `credential` or `credentialByAgent`. A caller-named DRN is a different mechanism
-with its own policy and its own owner-authored binding; see [Credentials](#credentials). These
-bounds sit below Dekopon 0.18.0 host defaults (30 seconds, 64 MiB Wasm memory, 1 MiB input/output,
-32 calls, 1 MiB request, 4 MiB response, 128 headers, and 64 KiB header bytes).
+with its own policy and its own owner-authored binding; see [Credentials](#credentials). The broker's current per-request and host resource limits remain authoritative.
 
 ### Contract limitations
 
@@ -56,9 +54,8 @@ bounds sit below Dekopon 0.18.0 host defaults (30 seconds, 64 MiB Wasm memory, 1
    otherwise-permitted GET path/query on that authority. Use a dedicated authority when that is too
    broad. A secret-use binding is the narrower object: it does constrain path and query, but only
    for where the secret it names may go, never for where the capability may go.
-2. **Duplicate raw JSON keys cannot be rejected after SDK decoding.** `serde_json::Value` retains
-   the last value. Tests record this last-wins limitation; no documentation claims duplicate-key
-   rejection.
+2. **Typed SDK input rejects duplicate raw JSON keys.** Direct deserialization into the
+   closed input type refuses duplicates before invocation; unknown fields are also refused.
 
 ## Invocation
 
@@ -96,34 +93,13 @@ bracketed IPv6 loopback with an explicit nonzero port, for constrained loopback 
 `allowPlaintextLoopback: false` still denies it authoritatively. The original bounded URI is passed
 to the broker—this guest intentionally does not duplicate its WHATWG parser or authorization logic.
 
-Every HTTP status, including 3xx/4xx/5xx, is successful data. Redirects are not followed. Output is
-byte-preserving padded RFC 4648 base64 with optional UTF-8 projections:
-
-```json
-{
-  "status": 200,
-  "headers": [
-    {"name": "x-value", "valueBase64": "b25l", "valueText": "one"}
-  ],
-  "bodyBase64": "AAE=",
-  "bodyText": "optional UTF-8 projection",
-  "bodyBytes": 2,
-  "bodyReturnedBytes": 2,
-  "bodyTruncated": false
-}
-```
-
-Response-header order and duplicates are preserved. The broker has already removed cookies,
-authentication challenges, and hop-by-hop fields; these are not raw wire headers. The guest accepts
-at most 128 response headers and 65,536 accounted header bytes. It returns at most 65,536 body
-bytes, backing up when a cut splits an otherwise valid UTF-8 scalar but retaining a full binary
-prefix for genuinely invalid UTF-8. `bodyBytes` is the complete host-returned size. `bodyText`
-appears only for valid UTF-8 whose compact JSON string is at most 131,072 bytes.
-
-The complete compact SDK success envelope is capped at 524,288 bytes. If optional text crosses the
-ceiling, every optional body/header text projection is removed; mandatory base64 remains. A host
-response overflow arrives as no partial response. All response content is untrusted and can
-prompt-inject a model.
+The guest opens one HTTP request, checks status, then splices the response body byte-for-byte to
+stdout; there is no JSON envelope, UTF-8 conversion, newline, or guest body prefix limit. Redirects
+(3xx) are returned as data without being followed. HTTP statuses 400 and above produce an error
+with status 22 and **no body output**. If the stdout reader closes, the SDK returns status 141.
+The broker bounds response bytes, time, and output and scans injected credentials during streaming;
+a late failure can leave a clean body prefix on stdout. Response headers are not output. All
+response content is untrusted and can prompt-inject a model.
 
 ## Command word
 
@@ -148,18 +124,21 @@ curl -h|--help
 Quiet flags are documented no-ops because structured execution has no progress meter. Method values
 are separate, case-insensitive `GET`, normalized uppercase, and may appear once. Headers are
 separate values, split at the first colon, trimmed around name/value, and preserve later colons,
-order, and duplicates. Exactly one URL, at most 70 argv entries, at most 24,576 aggregate UTF-8
-bytes across argv **and** the piped value, and at most 32 headers are accepted.
+order, and duplicates. Exactly one URL, at most 70 argv entries, at most 24,576 bytes for
+argv **plus raw piped headers combined**, and at most 32 headers are accepted. The proposal
+carries its argv byte count; authorized invocation reads at most the remaining budget plus one
+byte to detect overflow, counting CRLF and missing final terminators exactly.
 
 `-H @-` reads headers from the piped value, one `Name: value` per line, blank lines skipped, in
 place of one argv header. That is upstream curl's `@-` spelling, and it is the only stdin this
 provider has a use for: `curl.get` is bodyless by construction, so `-d @-` has nothing to fill. The
-pipe is read once; a second `@-`, or `@-` with nothing piped, is a usage error. Piped input reaches
-the parser unauthorized, exactly as argv does, and produces a proposal that is authorized on the
-ordinary path.
+pipe is read **only at authorized invoke**, never during proposal parsing. A second `@-`, absent
+pipe, or zero-byte piped input is a usage error; invalid piped headers never make an HTTP call.
 
-`-h`/`--help` renders a help page on standard output at status 0. Attached values, `--flag=value`,
-`@file` for any file other than `-`, and every unlisted option render on standard error at status 2:
+`-h`/`--help` renders SDK/clap help on standard output at status 0. Attached values,
+`--flag=value`, `@file` for any file other than `-`, and unlisted options are usage errors
+(status 2); SDK/clap renders help and unknown long options, while declined parsed arguments
+carry a fixed `usage` failure message:
 
 ```text
 usage: curl [-sS] [-X GET] [-H "Name: value"|-H @-]...
@@ -167,7 +146,7 @@ usage: curl [-sS] [-X GET] [-H "Name: value"|-H @-]...
 try 'curl --help'
 ```
 
-Rendered text is produced by the guest before authorization and grants nothing.
+Neither rendering nor a declined proposal grants authority.
 
 ## Credentials
 
@@ -201,7 +180,7 @@ the capability and never wider, and an authenticated response is as untrusted as
 This provider is not general curl and intentionally provides none of the following:
 
 - methods other than GET, HEAD, `-G`, request bodies, data, forms, or uploads (so no `-d @-`);
-- redirects, fail-on-status, retries, retry timing, or follow-up calls;
+- redirects, retries, retry timing, or follow-up calls;
 - generic credential injection through `credential`/`credentialByAgent`, cookies, caller-supplied
   authorization headers, or any token field in the invocation input;
 - proxies or environment proxy inheritance;
@@ -210,12 +189,12 @@ This provider is not general curl and intentionally provides none of the followi
 - compression negotiation, decompression, content decoding, or archive handling;
 - TLS bypass, custom CA/client certificates, or plaintext non-loopback HTTP;
 - caller-controlled Host, User-Agent, authorization, hop-by-hop, or arbitrary extension headers;
-- progress output, curl exit-code emulation, formatting, or raw wire response headers;
+- progress output, general curl exit-code emulation (except HTTP 22 and closed-pipe 141), formatting, or raw wire response headers;
 - path/query-aware Cedar policy, a second URL library for authorization, redirects-as-navigation,
   or a claim that GET is side-effect-free;
 - WASI, sockets, JS interop, clocks, randomness, environment access, or network-dependent tests;
 - sanitizing, trusting, interpreting, or prompt-safety-classifying fetched content;
-- rejecting duplicate raw JSON keys after the SDK has decoded them.
+- accepting duplicate raw JSON keys in the typed invocation input.
 
 Generic credentialed GET is excluded because an arbitrary allowed path can reflect a
 broker-injected credential in its response. A DRN named on argv is not that: it is refused unless
@@ -233,17 +212,19 @@ lint, dependency-policy, and component checks all run through the shared
 
 ```console
 cargo fmt --all --check
-cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo check --locked --all-targets --all-features
+cargo check --locked --target wasm32-unknown-unknown
+cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo deny --all-features check bans licenses sources advisories
 ../provider-workflows/build.sh
-DEKOPON_PROVIDER_COMPONENT=$PWD/curl-provider.wasm cargo test --locked --workspace
+DEKOPON_PROVIDER_COMPONENT=$PWD/curl-provider.wasm cargo test --locked --all-features
 ```
 
 Tests are native mocks or loopback-only broker fixtures. They never contact the public network.
-`tests/broker_host.rs` requires `DEKOPON_PROVIDER_COMPONENT` to point at the built component;
+`tests/typed.rs`, `tests/broker_authority.rs`, and `tests/secret_authority.rs` require
+`DEKOPON_PROVIDER_COMPONENT` to point at the freshly built component;
 without it, the component tests panic rather than skip. Generated Wasm, checksums, and `target/`
-are ignored and must be removed after local acceptance; do not use `cargo clean` as routine
-hygiene.
+are ignored. Do not use `cargo clean` as routine hygiene.
 
 See [`RELEASE.md`](RELEASE.md) for the tag-only release process.
 
