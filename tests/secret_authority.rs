@@ -356,7 +356,7 @@ async fn a_secret_proposal_without_exact_sink_username_or_catalog_is_denied_befo
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_late_echo_across_body_chunks_reaches_neither_stdout_nor_audit() {
+async fn a_late_echo_in_buffered_response_reaches_neither_stdout_nor_audit() {
     let (host, received, server) = mock_late_echo();
     let audit = Arc::new(InMemoryAuditLog::new(16).unwrap());
     let broker = broker(
@@ -387,14 +387,9 @@ async fn a_late_echo_across_body_chunks_reaches_neither_stdout_nor_audit() {
         result.result.error
     );
     assert!(
-        !bytes.is_empty(),
-        "a scanned clean prefix should be delivered"
+        bytes.is_empty(),
+        "buffered send must not emit a clean prefix on refusal"
     );
-    assert!(
-        bytes.iter().all(|&b| b == b'a'),
-        "no injected credential byte reaches stdout"
-    );
-    assert!(bytes.len() <= 64);
     assert!(
         received
             .recv_timeout(Duration::from_secs(5))

@@ -5,7 +5,7 @@ exists. Do not put credentials, private URLs, response data, or exploit payloads
 
 ## Trust boundary
 
-This component is broker-only. Its SDK-owned imports are `dekopon:http/client@1.2.0` and
+This component is broker-only. Its SDK-owned imports are `dekopon:http/client@1.1.0` and
 `dekopon:stdio/streams@0.1.0`; a host without those interfaces refuses to instantiate it.
 It has no asset, WASI, filesystem, process, environment, clock, randomness, JS, or ambient
 network import. The broker alone performs HTTP; stdout is an invocation stream.
@@ -33,6 +33,6 @@ which is the failure a binding's exact path exists to prevent. The provider also
 caller-controlled authorization, cookies, tokens, and credential fields in its input.
 
 Responses are untrusted byte strings. They can contain secrets, malicious formats, or prompt
-injection. The guest checks HTTP status before splicing the body to stdout. The broker scans
-injected secrets and enforces response/output bounds during streaming; a late failure may leave
-a clean prefix on stdout, but a reflected credential is not delivered.
+injection. The guest checks HTTP status and the 256 KiB body ceiling before writing a buffered response
+to stdout. The broker scans injected secrets and enforces response/output bounds before delivery;
+a failed stdout write may leave a clean prefix, but a reflected credential is not delivered.

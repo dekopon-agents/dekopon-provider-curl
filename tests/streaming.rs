@@ -1,9 +1,9 @@
-//! CU-b red/green contract: no JSON, status-before-body, and guest pipe semantics.
+//! Buffered HTTP contract: no JSON, status-before-body, and guest pipe semantics.
 use dekopon_curl_provider::Curl;
 use dekopon_provider_sdk::CommandRunOutcome;
 use dekopon_provider_sdk::provider::{
-    self, Body, Header, HttpError, HttpErrorCode, NativeStdio, OpenedResponse, Port, Request,
-    Response, StreamedRequest, StreamedResponse,
+    self, Header, HttpError, HttpErrorCode, NativeStdio, Port, Request, Response, StreamedRequest,
+    StreamedResponse,
 };
 use dekopon_provider_sdk_testkit::{Harness, HttpScript, Native, conformance};
 use serde_json::json;
@@ -114,7 +114,31 @@ fn clean_body_is_exact_bytes_not_a_json_envelope() {
     assert!(result.stderr.is_empty());
 }
 #[test]
-fn failing_http_status_is_exit_22_and_discards_body_before_splice() {
+fn buffered_response_boundary_refuses_oversize_without_partial_output() {
+    for size in [262_143, 262_144, 262_145] {
+        let body = vec![b'x'; size];
+        let native = Native::<Curl>::new().http(script(200, body.clone()));
+        let result = native.call(
+            "curl.get",
+            &json!({"uri":"https://example.com/path"}).to_string(),
+        );
+        assert_eq!(native.requests().len(), 1);
+        if size <= 262_144 {
+            assert_eq!(result.status, 0, "{}", result.stderr);
+            assert_eq!(result.stdout, body);
+            assert!(result.stderr.is_empty());
+        } else {
+            assert_eq!(result.status, 1);
+            assert!(result.stdout.is_empty());
+            assert_eq!(
+                result.stderr.trim(),
+                "broker HTTP response exceeded its limit"
+            );
+        }
+    }
+}
+#[test]
+fn failing_http_status_is_exit_22_and_discards_body_before_write() {
     for status in [400, 404, 429, 500, 599] {
         let result = Native::<Curl>::new()
             .http(script(status, b"secret-body-never-written".to_vec()))
@@ -179,20 +203,23 @@ impl Port for OpenOnly {
     fn now_unix_millis(&mut self) -> u64 {
         0
     }
+    fn now_nanos(&mut self) -> u64 {
+        0
+    }
+    fn fill_random(&mut self, bytes: &mut [u8]) {
+        bytes.fill(0);
+    }
     fn settings(&mut self) -> Option<String> {
         None
     }
-    fn send(&mut self, _: Request) -> Result<Response, HttpError> {
-        panic!("buffered send is retired")
-    }
-    fn open(&mut self, request: Request) -> Result<OpenedResponse, HttpError> {
+    fn send(&mut self, request: Request) -> Result<Response, HttpError> {
         assert_eq!(request.method, "GET");
         assert!(request.body.is_empty());
         self.opened.fetch_add(1, Ordering::SeqCst);
-        Ok(OpenedResponse {
+        Ok(Response {
             status: 200,
             headers: vec![],
-            body: Body::native(io::Cursor::new(b"first\nsecond\n".to_vec())),
+            body: b"first\nsecond\n".to_vec(),
         })
     }
     fn stream(&mut self, _: StreamedRequest<'_>) -> Result<StreamedResponse, HttpError> {
@@ -203,7 +230,7 @@ impl Port for OpenOnly {
     }
 }
 #[test]
-fn native_splice_to_closed_stdout_exits_141_without_error_text() {
+fn native_send_to_closed_stdout_exits_141_without_error_text() {
     let opened = Arc::new(AtomicUsize::new(0));
     let exit = provider::with_port(
         OpenOnly {
@@ -255,7 +282,7 @@ fn local_curl_component_to_rg_pipe_smoke() -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 #[test]
-fn checked_component_streams_clean_body_and_refuses_status_before_body()
+fn checked_component_sends_clean_body_and_refuses_status_before_body()
 -> Result<(), Box<dyn std::error::Error>> {
     conformance::<Curl>(component())?;
     let run = Harness::<Curl>::get(component()).http(HttpScript::new(
@@ -286,5 +313,22 @@ fn checked_component_streams_clean_body_and_refuses_status_before_body()
     assert_eq!(denied.status, 22);
     assert!(denied.stdout.is_empty());
     assert!(!denied.stderr.contains("secret-body-never-written"));
+    // The real component and broker fixture must also enforce the bounded response grant.
+    let oversized = Harness::<Curl>::get(component()).http(HttpScript::new(
+        "localhost",
+        "GET",
+        Response {
+            status: 200,
+            headers: vec![],
+            body: vec![b'x'; 262_145],
+        },
+    ));
+    let origin = oversized.origin().unwrap().to_owned();
+    let refused = oversized.call("curl.get", json!({"uri":format!("{origin}/large")}));
+    assert!(
+        refused.is_err(),
+        "broker must refuse beyond its 256 KiB grant"
+    );
+    assert!(refused.unwrap_err().to_string().contains("byte-limit"));
     Ok(())
 }
