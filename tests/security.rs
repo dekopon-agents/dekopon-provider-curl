@@ -187,7 +187,7 @@ fn statuses_redirects_and_binary_bodies_are_not_retried() {
     }
 }
 #[test]
-fn streamed_binary_body_is_complete_without_a_guest_prefix_cut() {
+fn buffered_binary_body_is_complete_within_response_limit() {
     let body = vec![0xff; 262_144];
     let (result, calls) = scripted(
         json!({"uri":"https://example.com/"}),

@@ -1,7 +1,7 @@
 # dekopon-provider-curl
 
 A production-bounded HTTP GET provider for
-[Dekopon](https://github.com/dekopon-agents/dekopon) core 0.31.0, pinned to published crates.
+[Dekopon](https://github.com/dekopon-agents/dekopon) core 0.33.0, pinned to published crates.
 
 | Manifest field | Value |
 |---|---|
@@ -15,18 +15,18 @@ sensitive or adversarial, and broken upstreams can make GET stateful.
 
 ## Broker-only execution
 
-The SDK-owned component imports `dekopon:http/client@1.2.0` and
+The SDK-owned component imports `dekopon:http/client@1.1.0` and
 `dekopon:stdio/streams@0.1.0`; it exports `describe`, typed `invoke`, and `run-command`.
 It imports no WASI, asset, or other ambient interface and contains no HTTP stack. Only a separate
 Dekopon broker links the import and supplies authorization, canonical URL handling, DNS validation
-and pinning, streaming limits, and transport.
+and pinning, response limits, and transport.
 
 Any host that does not link that import—an empty Wasmtime linker, or any direct non-broker
 host—refuses the component. That is expected, not an installation error. Configure the component in
 `dekopon-brokerd`, an exact constraint set, and a separate Cedar grant. See
 [`examples/broker.yaml`](examples/broker.yaml) and [`examples/policies.cedar`](examples/policies.cedar).
 
-Supported v0.5.0 constraints are:
+Supported v0.6.0 constraints are:
 
 ```yaml
 constraintSets:
@@ -93,13 +93,16 @@ bracketed IPv6 loopback with an explicit nonzero port, for constrained loopback 
 `allowPlaintextLoopback: false` still denies it authoritatively. The original bounded URI is passed
 to the broker—this guest intentionally does not duplicate its WHATWG parser or authorization logic.
 
-The guest opens one HTTP request, checks status, then splices the response body byte-for-byte to
-stdout; there is no JSON envelope, UTF-8 conversion, newline, or guest body prefix limit. Redirects
-(3xx) are returned as data without being followed. HTTP statuses 400 and above produce an error
-with status 22 and **no body output**. If the stdout reader closes, the SDK returns status 141.
-The broker bounds response bytes, time, and output and scans injected credentials during streaming;
-a late failure can leave a clean body prefix on stdout. Response headers are not output. All
-response content is untrusted and can prompt-inject a model.
+The guest sends one buffered HTTP request, checks status and the 262,144-byte body ceiling, then
+writes the response body byte-for-byte to stdout; there is no JSON envelope, UTF-8 conversion, or
+newline. Redirects (3xx) are returned as data without being followed. HTTP statuses 400 and above
+produce status 22 and **no body output**. Oversized bodies produce a typed `response-too-large`
+refusal with no body output. The broker's effective Pi GET/HEAD grant is 256 KiB, not its global
+12 MiB ceiling; it also enforces response, request, time, and output limits and scans injected
+credentials. The request bound remains 32,768 bytes. Large or streaming responses are not
+supported: use an explicitly designed asset-backed provider instead of raising this grant.
+If the stdout reader closes, the SDK returns status 141. A failed stdout write can leave a prefix;
+response headers are not output. All response content is untrusted and can prompt-inject a model.
 
 ## Command word
 
@@ -212,12 +215,12 @@ lint, dependency-policy, and component checks all run through the shared
 
 ```console
 cargo fmt --all --check
-cargo check --locked --all-targets --all-features
+cargo check --locked --workspace --all-targets --all-features
 cargo check --locked --target wasm32-unknown-unknown
-cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo deny --all-features check bans licenses sources advisories
 ../provider-workflows/build.sh
-DEKOPON_PROVIDER_COMPONENT=$PWD/curl-provider.wasm cargo test --locked --all-features
+DEKOPON_PROVIDER_COMPONENT=$PWD/curl-provider.wasm cargo test --locked --workspace --all-features
 ```
 
 Tests are native mocks or loopback-only broker fixtures. They never contact the public network.

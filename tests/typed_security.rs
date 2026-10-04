@@ -3,8 +3,7 @@ use dekopon_core::{CommandWordConflictKind, RESERVED_COMMAND_WORDS, command_word
 use dekopon_curl_provider::Curl;
 use dekopon_provider_sdk::provider;
 use dekopon_provider_sdk::provider::{
-    HttpError, HttpErrorCode, OpenedResponse, Port, Request, Response, StreamedRequest,
-    StreamedResponse,
+    HttpError, HttpErrorCode, Port, Request, Response, StreamedRequest, StreamedResponse,
 };
 use dekopon_provider_sdk_testkit::{HttpScript, Native};
 use serde_json::json;
@@ -24,13 +23,16 @@ impl Port for FailingHttp {
     fn now_unix_millis(&mut self) -> u64 {
         0
     }
+    fn now_nanos(&mut self) -> u64 {
+        0
+    }
+    fn fill_random(&mut self, bytes: &mut [u8]) {
+        bytes.fill(0);
+    }
     fn settings(&mut self) -> Option<String> {
         None
     }
     fn send(&mut self, _: Request) -> Result<Response, HttpError> {
-        panic!("buffered send is retired")
-    }
-    fn open(&mut self, _: Request) -> Result<OpenedResponse, HttpError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Err(HttpError {
             code: self.code,
@@ -132,7 +134,7 @@ fn sdk_word_registry_grants_curl_but_refuses_reserved_and_contested_claims() {
 }
 #[test]
 fn fake_port_response_headers_are_not_a_guest_projection_or_validation_boundary() {
-    // Typed open returns only a body to the guest. The real broker HTTP host validates wire
+    // Typed send returns headers and a body to the guest. The real broker HTTP host validates wire
     // headers; native testkit scripts intentionally bypass that host and can contain bad names.
     for headers in [
         vec![dekopon_provider_sdk::provider::Header {

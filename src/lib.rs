@@ -6,15 +6,19 @@ mod uri;
 use dekopon_provider_sdk::provider::{
     self, Capability, Code, Failure, Http, Proposal, Provider, Stdout, Usage,
 };
-use dekopon_provider_sdk::provider::{
-    Header, HttpError, HttpErrorCode, Request, SpliceError, method,
-};
+use dekopon_provider_sdk::provider::{Header, HttpError, HttpErrorCode, Request, method};
 use dekopon_provider_sdk::{EffectKind, RiskLevel};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, fmt, io::Read};
+use std::{
+    borrow::Cow,
+    fmt,
+    io::{Read, Write},
+};
 
 const USER_AGENT: &str = concat!("dekopon-provider-curl/", env!("CARGO_PKG_VERSION"));
+// Match the effective Pi GET/HEAD grant, not the broker's broader global ceiling.
+const MAX_RESPONSE_BYTES: usize = 262_144;
 const MAX_REQUEST_HEADERS: usize = 32;
 const MAX_HEADER_NAME_BYTES: usize = 64;
 const MAX_HEADER_VALUE_BYTES: usize = 4_096;
@@ -131,16 +135,19 @@ impl Capability for Get {
 
     fn run(input: Self::Input, http: Http, out: &mut Stdout) -> Result<(), Self::Error> {
         let request = build_request(input)?;
-        let response = http.open(request).map_err(map_http_error)?;
-        // Reject HTTP errors before touching the body, even if it contains untrusted bytes.
+        let response = http.send(request).map_err(map_http_error)?;
+        // Never emit an untrusted body for a failing status or an oversized response.
         if response.status >= 400 {
             return Err(CurlError::http_status(response.status));
         }
-        response.body.splice(out).map_err(|error| match error {
-            SpliceError::Closed => CurlError::new("output-closed", "stdout's reader has gone"),
-            SpliceError::Http(error) => map_http_error(error),
-        })?;
-        Ok(())
+        if response.body.len() > MAX_RESPONSE_BYTES {
+            return Err(CurlError::new(
+                "response-too-large",
+                "broker HTTP response exceeded its limit",
+            ));
+        }
+        out.write_all(&response.body)
+            .map_err(|_| CurlError::new("output-closed", "stdout's reader has gone"))
     }
 }
 
