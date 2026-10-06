@@ -12,9 +12,10 @@ publish`, push an OCI artifact by hand, or create a release manually.
    v<version>`.
 4. The workflow performs: MSRV/source/build gates -> provenance/SBOM attestations -> one newly owned
    draft with exact assets -> a verified GHCR `<version>` manifest -> prepublication
-   re-verification -> explicit finalization -> anonymous verification. It never creates `latest` or
-   `staging`.
-5. Confirm release assets are exactly `curl-provider.wasm` and `curl-provider.wasm.sha256`. Confirm
+   re-verification -> explicit finalization -> anonymous verification. It never creates a `latest` or
+   `staging` OCI tag.
+5. Confirm release assets are exactly `curl-provider.wasm`, `curl-provider.wasm.sha256` and the
+   CycloneDX SBOM `curl-provider.cdx.json`. Confirm
    the public OCI manifest has one `application/wasm` layer, title `curl-provider.wasm`, and that
    the repository's tag list gained exactly the new version.
 
@@ -35,5 +36,5 @@ rolling itself back must not take its predecessors offline. Rollback never disco
 through a mutable tag, and cleanup errors fail loudly. Attestations are immutable and may remain as
 non-release evidence for a failed digest.
 
-GitHub release finalization explicitly sets `draft: false`, `prerelease: false`, and
-`make_latest: "false"`.
+GitHub release finalization explicitly sets `draft: false`, sets `prerelease` from the version, and
+marks a stable release `make_latest: "true"` (a prerelease is never latest).
