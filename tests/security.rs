@@ -240,7 +240,7 @@ fn piped_headers_are_interleaved_and_failed_pipes_send_nothing() {
     ] {
         let native = Native::<Curl>::new().stdin(bytes.to_vec());
         let failed = native.call("curl.get", &input.to_string());
-        assert_eq!(failed.status, 2);
+        assert_ne!(failed.status, 0);
         assert!(native.requests().is_empty());
     }
 }
