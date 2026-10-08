@@ -16,7 +16,11 @@ use std::{
     io::{Read, Write},
 };
 
-const USER_AGENT: &str = concat!("dekopon-provider-curl/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!(
+    "dekopon-provider-curl/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/dekopon-agents/dekopon-provider-curl)"
+);
 // Match the effective Pi GET/HEAD grant, not the broker's broader global ceiling.
 const MAX_RESPONSE_BYTES: usize = 262_144;
 const MAX_REQUEST_HEADERS: usize = 32;
