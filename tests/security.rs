@@ -232,15 +232,14 @@ fn piped_headers_are_interleaved_and_failed_pipes_send_nothing() {
         native.requests()[0].headers.last().unwrap().value,
         b"dekopon-provider-curl/0.6.1 (+https://github.com/dekopon-agents/dekopon-provider-curl)"
     );
-    for bytes in [
-        &b""[..],
-        &b"missing-colon\n"[..],
-        &b" : value\n"[..],
-        &b"User-Agent: override\n"[..],
-    ] {
+    for bytes in [&b""[..], &b"missing-colon\n"[..], &b" : value\n"[..]] {
         let native = Native::<Curl>::new().stdin(bytes.to_vec());
         let failed = native.call("curl.get", &input.to_string());
-        assert_ne!(failed.status, 0);
+        assert_eq!(failed.status, 2);
         assert!(native.requests().is_empty());
     }
+    let native = Native::<Curl>::new().stdin(b"User-Agent: override\n".to_vec());
+    let failed = native.call("curl.get", &input.to_string());
+    assert_ne!(failed.status, 0);
+    assert!(native.requests().is_empty());
 }
