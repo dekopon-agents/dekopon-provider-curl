@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-10-08
+
+### Changed
+
+- Add a repository contact to the fixed versioned User-Agent sent on every broker-authorized GET; callers still cannot override it.
+- Pin the provider SDK, testkit, and carried core crates exactly to 0.36.0 without changing the WIT imports or exports.
+
 ## [0.6.0] - 2026-10-04
 
 ### Changed
