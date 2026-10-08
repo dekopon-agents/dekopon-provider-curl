@@ -53,6 +53,8 @@ fn closed_input_method_and_uri_validation_precede_all_network() {
 fn forbidden_and_malformed_headers_never_reach_broker_http() {
     for name in [
         "authorization",
+        "user-agent",
+        "User-Agent",
         "proxy-authorization",
         "cookie",
         "host",
@@ -118,6 +120,10 @@ fn header_allowlist_order_duplicates_and_limits_are_enforced() {
     }
     assert_eq!(calls[0].headers[6].value, b"duplicate");
     assert_eq!(calls[0].headers[7].name, "user-agent");
+    assert_eq!(
+        calls[0].headers[7].value,
+        b"dekopon-provider-curl/0.6.1 (+https://github.com/dekopon-agents/dekopon-provider-curl)"
+    );
     assert!(calls[0].headers.iter().all(|h| h.name != "authorization"));
     for value in ["v".repeat(4097), "x".repeat(16_385)] {
         rejected(
@@ -177,6 +183,9 @@ fn statuses_redirects_and_binary_bodies_are_not_retried() {
         assert_eq!(calls[0].uri, "https://example.com/private?token=sentinel");
         assert_eq!(calls[0].method, "GET");
         assert!(calls[0].body.is_empty());
+        assert_eq!(calls[0].headers.len(), 1);
+        assert_eq!(calls[0].headers[0].name, "user-agent");
+        assert_eq!(calls[0].headers[0].value, b"dekopon-provider-curl/0.6.1 (+https://github.com/dekopon-agents/dekopon-provider-curl)");
         if status >= 400 {
             assert_eq!(result.status, 22);
             assert!(result.stdout.is_empty());
@@ -219,7 +228,16 @@ fn piped_headers_are_interleaved_and_failed_pipes_send_nothing() {
             "user-agent"
         ]
     );
-    for bytes in [&b""[..], &b"missing-colon\n"[..], &b" : value\n"[..]] {
+    assert_eq!(
+        native.requests()[0].headers.last().unwrap().value,
+        b"dekopon-provider-curl/0.6.1 (+https://github.com/dekopon-agents/dekopon-provider-curl)"
+    );
+    for bytes in [
+        &b""[..],
+        &b"missing-colon\n"[..],
+        &b" : value\n"[..],
+        &b"User-Agent: override\n"[..],
+    ] {
         let native = Native::<Curl>::new().stdin(bytes.to_vec());
         let failed = native.call("curl.get", &input.to_string());
         assert_eq!(failed.status, 2);
