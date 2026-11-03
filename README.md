@@ -154,12 +154,12 @@ Neither rendering nor a declined proposal grants authority.
 ## Credentials
 
 `--oauth2-bearer <drn>` and `-u <username>:<drn>` name one secret by its public DRN,
-`drn:<authority>:secret:<realm>:<path>` — the two forms the retired shell builtin took, spelled with
+`drn:secret:<path>` — the two forms the retired shell builtin took, spelled with
 a bare DRN rather than that builtin's `${drn:…}` marker. At most one of the two, at most once.
 
 ```sh
-curl --oauth2-bearer drn:com.xrl:secret:prod:api/token https://api.example.com/v1/thing
-curl -u userA:drn:com.xrl:secret:prod:api/password https://api.example.com/v1/thing
+curl --oauth2-bearer drn:secret:api/token https://api.example.com/v1/thing
+curl -u userA:drn:secret:api/password https://api.example.com/v1/thing
 ```
 
 The DRN never enters the invocation. It rides the proposal's `secretUse` field, and the input is

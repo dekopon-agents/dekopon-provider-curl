@@ -72,7 +72,7 @@ fn typed_manifest_and_proposals_are_closed_and_preserve_authority() {
             "{args:?}"
         );
     }
-    let secret = "drn:com.xrl:secret:test:curl/token";
+    let secret = "drn:secret:curl/token";
     let CommandRunOutcome::Proposed {
         input, secret_use, ..
     } = command(&["--oauth2-bearer", secret, "https://example.com"], false)

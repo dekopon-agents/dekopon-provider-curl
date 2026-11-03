@@ -1,8 +1,7 @@
 //! Real-component broker policy and audit checks carried across the typed migration.
 use dekopon_broker::{
     AuthenticatedContext, Broker, BrokerLimits, CapabilityRoute, ConstraintCatalog, ConstraintSet,
-    CredentialStore, IdentityDirectory, InMemoryAuditLog, InvocationRequest, PolicyEngine,
-    PolicyWorld,
+    IdentityDirectory, InMemoryAuditLog, InvocationRequest, PolicyEngine, PolicyWorld,
 };
 use dekopon_broker_host::{BrokerHostLimits, BrokerProviderRegistry, asset::AssetInputs};
 use dekopon_broker_protocol::{Streams, TraceParent};
@@ -38,7 +37,7 @@ fn context(value: &str) -> AuthenticatedContext {
             agent: "curl-test".parse::<AgentId>().unwrap(),
         },
         principal("gateway"),
-        "slack.t0123abc.u9xyz".parse().unwrap(),
+        "drn:slack:user:t0123abc:u9xyz".parse().unwrap(),
     )
     .unwrap()
 }
@@ -62,6 +61,8 @@ fn profile(authority: &str) -> ExecutionConstraints {
             max_response_bytes: 262_144,
             allow_plaintext_loopback: true,
             propagate_trace: false,
+            request_templates: Vec::new(),
+            signed_download: None,
         }),
         storage: None,
         asset: None,
@@ -123,17 +124,15 @@ async fn cedar_denies_before_http_and_exact_get_is_audited_without_payload() {
         provider: "curl".parse().unwrap(),
         effect: EffectKind::ReadOnly,
         risk: dekopon_core::RiskLevel::Medium,
-        credential: None,
+        default_secret_use: None,
         constraints: profile(&authority),
     };
     let audit = Arc::new(InMemoryAuditLog::new(16).unwrap());
     let broker = Broker::new(
         registry,
         principal("broker-test"),
-        "policy-test".to_owned(),
         PolicyEngine::new(policy, &world).unwrap(),
         ConstraintCatalog::new([(capability(), constraints)]).unwrap(),
-        CredentialStore::empty(),
         IdentityDirectory::empty(),
         Arc::clone(&audit),
         BrokerLimits::default(),

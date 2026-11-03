@@ -192,14 +192,14 @@ fn unlisted_options_and_non_get_methods_remain_refused() {
 }
 #[test]
 fn credential_flags_name_only_public_drns_and_do_not_enter_input() {
-    const DRN: &str = "drn:com.xrl:secret:test:curl/token";
+    const DRN: &str = "drn:secret:curl/token";
     let plain = input(&["https://example.com/a"], false);
     for (words, basic) in [
         (vec!["--oauth2-bearer", DRN, "https://example.com/a"], false),
         (
             vec![
                 "-u",
-                "user-a:drn:com.xrl:secret:test:curl/token",
+                "user-a:drn:secret:curl/token",
                 "https://example.com/a",
             ],
             true,
@@ -223,9 +223,9 @@ fn credential_flags_name_only_public_drns_and_do_not_enter_input() {
         }
     }
     for bad in [
-        "${drn:com.xrl:secret:test:curl/token}",
-        "drn:com.xrl:secret:Test:curl/token",
-        "drn:com.xrl:secret:test:curl//token",
+        "${drn:secret:curl/token}",
+        "drn:secret:curl//token",
+        "drn:com.xrl:secret:test:curl/token",
         "not-a-drn",
         "secret-sentinel-never-return",
     ] {
@@ -245,11 +245,28 @@ fn credential_flags_name_only_public_drns_and_do_not_enter_input() {
             "--oauth2-bearer",
             DRN,
             "-u",
-            "user-a:drn:com.xrl:secret:test:curl/token",
+            "user-a:drn:secret:curl/token",
             "https://example.com",
         ],
         false,
     );
+}
+#[test]
+fn an_uppercase_secret_path_is_proposed_folded_to_lowercase() {
+    let CommandRunOutcome::Proposed { secret_use, .. } = command(
+        &[
+            "--oauth2-bearer",
+            "drn:secret:Curl/Token",
+            "https://example.com/a",
+        ],
+        false,
+    ) else {
+        panic!("folded secret proposal")
+    };
+    let Some(SecretUseProposal::HttpBearer { secret }) = secret_use else {
+        panic!("bearer secret use")
+    };
+    assert_eq!(secret.as_str(), "drn:secret:curl/token");
 }
 #[test]
 fn command_arg_header_and_byte_limits_remain_bounded() {

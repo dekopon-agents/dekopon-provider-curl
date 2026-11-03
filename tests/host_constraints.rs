@@ -1,6 +1,7 @@
 //! Real checked component: exact HTTP host constraints, not just native scripted imports.
 use dekopon_broker_host::{
-    BrokerHostError, BrokerHostLimits, BrokerProviderRegistry, asset::AssetInputs,
+    BrokerHostError, BrokerHostLimits, BrokerProviderRegistry, HostCallRejection, PolicyViolation,
+    asset::AssetInputs,
 };
 use dekopon_broker_protocol::Streams;
 use dekopon_capability::{
@@ -35,6 +36,8 @@ fn constraints(host: &str) -> ExecutionConstraints {
             max_response_bytes: 262_144,
             allow_plaintext_loopback: true,
             propagate_trace: false,
+            request_templates: Vec::new(),
+            signed_download: None,
         }),
         storage: None,
         asset: None,
@@ -57,7 +60,7 @@ fn authorized(id: &str, input: Value, grant: ExecutionConstraints) -> Authorized
             "curl".parse().unwrap(),
             format!("decision-{id}"),
             "broker-test".parse().unwrap(),
-            "policy-test".into(),
+            "a".repeat(64),
             grant,
         )
         .unwrap()
@@ -81,20 +84,28 @@ async fn host_refuses_missing_wrong_host_method_port_plaintext_and_request_limit
         .await
         .unwrap();
     let uri = "http://127.0.0.1:9/never-connect";
+    let denied: fn(HostCallRejection) -> bool =
+        |reason| reason == HostCallRejection::Http(PolicyViolation::Denied);
+    let byte_limit: fn(HostCallRejection) -> bool = |reason| {
+        matches!(
+            reason,
+            HostCallRejection::Http(PolicyViolation::ByteLimit(_))
+        )
+    };
     let mut cases = vec![
-        ("missing", ExecutionConstraints::default(), "denied"),
-        ("wrong-port", constraints("127.0.0.1:10"), "denied"),
-        ("wrong-host-same-port", constraints("127.0.0.2:9"), "denied"),
+        ("missing", ExecutionConstraints::default(), denied),
+        ("wrong-port", constraints("127.0.0.1:10"), denied),
+        ("wrong-host-same-port", constraints("127.0.0.2:9"), denied),
     ];
     let mut wrong_method = constraints("127.0.0.1:9");
     wrong_method.http.as_mut().unwrap().allowed_methods = vec!["POST".into()];
-    cases.push(("wrong-method", wrong_method, "denied"));
+    cases.push(("wrong-method", wrong_method, denied));
     let mut plaintext = constraints("127.0.0.1:9");
     plaintext.http.as_mut().unwrap().allow_plaintext_loopback = false;
-    cases.push(("plaintext-disabled", plaintext, "denied"));
+    cases.push(("plaintext-disabled", plaintext, denied));
     let mut too_large = constraints("127.0.0.1:9");
     too_large.http.as_mut().unwrap().max_request_bytes = 64;
-    cases.push(("request-too-large", too_large, "byte-limit"));
+    cases.push(("request-too-large", too_large, byte_limit));
     for (name, grant, reason) in cases {
         let failure = registry
             .invoke(
@@ -105,7 +116,7 @@ async fn host_refuses_missing_wrong_host_method_port_plaintext_and_request_limit
             .await
             .expect_err("host authorization must refuse");
         assert!(
-            matches!(failure.error.as_ref(), BrokerHostError::HostCallRejected { reason: actual, .. } if *actual == reason),
+            matches!(failure.error.as_ref(), BrokerHostError::HostCallRejected { reason: actual, .. } if reason(*actual)),
             "{name}: {failure}"
         );
         assert!(
@@ -234,7 +245,7 @@ async fn response_timeout_and_overflow_are_terminal_without_partial_stdout() {
         matches!(
             outcome.as_ref().err().map(|f| f.error.as_ref()),
             Some(BrokerHostError::HostCallRejected {
-                reason: "byte-limit",
+                reason: HostCallRejection::Http(PolicyViolation::ByteLimit(_)),
                 ..
             })
         ),

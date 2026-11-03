@@ -2,9 +2,8 @@
 use async_trait::async_trait;
 use dekopon_broker::{
     AuthenticatedContext, Broker, BrokerLimits, CapabilityRoute, ConstraintCatalog, ConstraintSet,
-    CredentialStore, IdentityDirectory, InMemoryAuditLog, InvocationRequest, PolicyEngine,
-    PolicyWorld, SecretCatalog, SecretMaterial, SecretResolutionError, SecretResolver,
-    SecretUseBinding,
+    IdentityDirectory, InMemoryAuditLog, InvocationRequest, PolicyEngine, PolicyWorld,
+    SecretCatalog, SecretMaterial, SecretResolutionError, SecretResolver, SecretUseBinding,
 };
 use dekopon_broker_host::{
     BrokerHostLimits, BrokerProviderRegistry, CommandRunOutcome, asset::AssetInputs,
@@ -18,6 +17,7 @@ use dekopon_core::{
 };
 use serde_json::Value;
 use std::{
+    collections::BTreeSet,
     io::{Read, Write},
     net::TcpListener,
     os::{fd::OwnedFd, unix::net::UnixStream},
@@ -27,7 +27,8 @@ use std::{
     time::Duration,
 };
 
-const SECRET: &str = "drn:com.xrl:secret:test:curl/token";
+const SECRET: &str = "drn:secret:curl/token";
+const LEGACY_SECRET: &str = "drn:com.xrl:secret:test:curl/token";
 const SECRET_BYTES: &[u8] = b"drn-secret-never-visible";
 const PATH: &str = "/api/v1/thing";
 fn component() -> PathBuf {
@@ -48,7 +49,7 @@ fn context() -> AuthenticatedContext {
             agent: "curl-test".parse::<AgentId>().unwrap(),
         },
         principal("gateway"),
-        "slack.t0123abc.u9xyz".parse().unwrap(),
+        "drn:slack:user:t0123abc:u9xyz".parse().unwrap(),
     )
     .unwrap()
 }
@@ -63,6 +64,8 @@ fn profile(host: &str) -> ExecutionConstraints {
             max_response_bytes: 262_144,
             allow_plaintext_loopback: true,
             propagate_trace: false,
+            request_templates: Vec::new(),
+            signed_download: None,
         }),
         storage: None,
         asset: None,
@@ -179,16 +182,14 @@ async fn broker(
         provider: "curl".parse().unwrap(),
         effect: EffectKind::ReadOnly,
         risk: dekopon_core::RiskLevel::Medium,
-        credential: None,
+        default_secret_use: None,
         constraints: profile(host),
     };
     let broker = Broker::new(
         registry,
         principal("broker-test"),
-        "policy-test".into(),
         PolicyEngine::new(&policy, &world).unwrap(),
         ConstraintCatalog::new([(cap(), constraints)]).unwrap(),
-        CredentialStore::empty(),
         IdentityDirectory::empty(),
         audit,
         BrokerLimits::default(),
@@ -201,7 +202,7 @@ async fn broker(
                     vec![SecretUseBinding {
                         binding_id: "curl-token".to_owned(),
                         secret: SECRET.parse().unwrap(),
-                        capability: cap(),
+                        capabilities: BTreeSet::from([cap()]),
                         sink,
                         basic_username: username.map(str::to_owned),
                         allowed_hosts: vec![host.to_owned()],
@@ -400,4 +401,117 @@ async fn a_late_echo_in_buffered_response_reaches_neither_stdout_nor_audit() {
     let records = serde_json::to_string(&audit.records()).unwrap();
     assert!(!records.contains("drn-secret-never-visible"));
     assert!(!records.contains("dXNlci1hOmRybi1zZWNyZXQtbmV2ZXItdmlzaWJsZQ=="));
+}
+/// Proposes `credential` and then GETs `PATH` under the permit and an exact binding for `sink`.
+/// It returns the request the loopback upstream received.
+async fn granted_request(
+    sink: SecretSinkKind,
+    username: Option<&str>,
+    credential: [&str; 2],
+) -> String {
+    let (host, received, server) = mock_http();
+    let audit = Arc::new(InMemoryAuditLog::new(16).unwrap());
+    let broker = broker(&host, Some((sink, username)), audit).await;
+    let uri = format!("http://{host}{PATH}");
+    let (input, secret_use) = proposal(&broker, &[credential[0], credential[1], &uri]).await;
+    let (assets, _stdout) = streams();
+    let result = broker
+        .invoke(
+            &context(),
+            None,
+            None,
+            request("secret-granted", input, secret_use),
+            assets,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        result.result.outcome,
+        InvocationOutcome::Succeeded,
+        "{:?}",
+        result.result.error
+    );
+    let wire = String::from_utf8(received.recv_timeout(Duration::from_secs(5)).unwrap()).unwrap();
+    server.join().unwrap();
+    wire
+}
+fn authorization_lines(wire: &str) -> Vec<&str> {
+    wire.split("\r\n")
+        .filter(|line| line.to_ascii_lowercase().starts_with("authorization:"))
+        .collect()
+}
+/// Runs `credential` under the permit and an exact binding for `sink` against a listener that
+/// must never be dialled, and returns the guest's refusal.
+async fn refused_before_http(
+    sink: SecretSinkKind,
+    username: Option<&str>,
+    credential: [&str; 2],
+) -> (String, String) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let host = listener.local_addr().unwrap().to_string();
+    let audit = Arc::new(InMemoryAuditLog::new(16).unwrap());
+    let broker = broker(&host, Some((sink, username)), audit).await;
+    let words = [
+        credential[0],
+        credential[1],
+        &format!("http://{host}{PATH}"),
+    ]
+    .map(str::to_owned);
+    let refused = broker
+        .run_command(&context(), None, None, "curl", &words, false)
+        .await
+        .unwrap();
+    let CommandRunOutcome::Failed { error } = refused else {
+        panic!("expected the fixed credential refusal, got {refused:?}")
+    };
+    assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
+    (error.code, error.message)
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn oauth2_bearer_with_a_drn_secret_path_sends_exactly_one_authorization_header() {
+    let wire = granted_request(
+        SecretSinkKind::HttpBearer,
+        None,
+        ["--oauth2-bearer", SECRET],
+    )
+    .await;
+    assert_eq!(
+        authorization_lines(&wire),
+        ["authorization: Bearer drn-secret-never-visible"]
+    );
+    assert!(!wire.contains(SECRET));
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn basic_user_with_a_drn_secret_path_sends_exactly_one_authorization_header() {
+    let basic = format!("user-a:{SECRET}");
+    let wire = granted_request(SecretSinkKind::HttpBasic, Some("user-a"), ["-u", &basic]).await;
+    assert_eq!(
+        authorization_lines(&wire),
+        ["authorization: Basic dXNlci1hOmRybi1zZWNyZXQtbmV2ZXItdmlzaWJsZQ=="]
+    );
+    assert!(!wire.contains(SECRET));
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn oauth2_bearer_with_the_legacy_authority_realm_spelling_is_refused_before_any_http() {
+    let refusal = refused_before_http(
+        SecretSinkKind::HttpBearer,
+        None,
+        ["--oauth2-bearer", LEGACY_SECRET],
+    )
+    .await;
+    assert_eq!(
+        (refusal.0.as_str(), refusal.1.as_str()),
+        ("usage", "curl: --oauth2-bearer: value must be a bare DRN")
+    );
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn basic_user_with_the_legacy_authority_realm_spelling_is_refused_before_any_http() {
+    let basic = format!("user-a:{LEGACY_SECRET}");
+    let refusal =
+        refused_before_http(SecretSinkKind::HttpBasic, Some("user-a"), ["-u", &basic]).await;
+    assert_eq!(
+        (refusal.0.as_str(), refusal.1.as_str()),
+        ("usage", "curl: -u: value must name a bare DRN")
+    );
 }
