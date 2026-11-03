@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-11-03
+
+### Changed
+
+- `--oauth2-bearer` and `-u USER:` take a secret DRN spelled `drn:secret:<path>` and refuse the legacy `drn:<authority>:secret:<realm>:<path>` spelling; a mixed-case path is proposed lowercased.
+- An input that fails its schema is refused with a field-level message, such as `invalid input: uri: missing field`.
+- Pin the provider SDK and carried dekopon crates exactly to 0.83.0 without changing the WIT imports or exports.
+- Pin the native test harness's tokio dependency to 1.53.3.
+
 ## [0.6.1] - 2026-10-08
 
 ### Changed

@@ -122,7 +122,7 @@ fn header_allowlist_order_duplicates_and_limits_are_enforced() {
     assert_eq!(calls[0].headers[7].name, "user-agent");
     assert_eq!(
         calls[0].headers[7].value,
-        b"dekopon-provider-curl/0.6.1 (+https://github.com/dekopon-agents/dekopon-provider-curl)"
+        b"dekopon-provider-curl/0.6.2 (+https://github.com/dekopon-agents/dekopon-provider-curl)"
     );
     assert!(calls[0].headers.iter().all(|h| h.name != "authorization"));
     for value in ["v".repeat(4097), "x".repeat(16_385)] {
@@ -185,7 +185,7 @@ fn statuses_redirects_and_binary_bodies_are_not_retried() {
         assert!(calls[0].body.is_empty());
         assert_eq!(calls[0].headers.len(), 1);
         assert_eq!(calls[0].headers[0].name, "user-agent");
-        assert_eq!(calls[0].headers[0].value, b"dekopon-provider-curl/0.6.1 (+https://github.com/dekopon-agents/dekopon-provider-curl)");
+        assert_eq!(calls[0].headers[0].value, b"dekopon-provider-curl/0.6.2 (+https://github.com/dekopon-agents/dekopon-provider-curl)");
         if status >= 400 {
             assert_eq!(result.status, 22);
             assert!(result.stdout.is_empty());
@@ -230,7 +230,7 @@ fn piped_headers_are_interleaved_and_failed_pipes_send_nothing() {
     );
     assert_eq!(
         native.requests()[0].headers.last().unwrap().value,
-        b"dekopon-provider-curl/0.6.1 (+https://github.com/dekopon-agents/dekopon-provider-curl)"
+        b"dekopon-provider-curl/0.6.2 (+https://github.com/dekopon-agents/dekopon-provider-curl)"
     );
     for bytes in [&b""[..], &b"missing-colon\n"[..], &b" : value\n"[..]] {
         let native = Native::<Curl>::new().stdin(bytes.to_vec());

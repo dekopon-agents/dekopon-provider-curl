@@ -4,12 +4,12 @@ The tag workflow is intentionally the only publisher. Do not commit generated Wa
 publish`, push an OCI artifact by hand, or create a release manually.
 
 1. On clean `main`, run all commands in the README's acceptance section and confirm `ci / validate`
-   is green; it performs the two-archive reproducibility gate that used to run locally.
+   is green.
 2. Confirm `git status --short` is empty, the package version in `Cargo.toml` is exactly the version
    you are about to tag, no release exists for that tag, and `ghcr.io/dekopon-agents/provider-curl`
    carries no version with that tag. Published versions are immutable; a reused tag is refused.
-3. Create and push an **annotated** tag: `git tag -a v<version> -m 'v<version>' && git push origin
-   v<version>`.
+3. Dispatch the **Cut release** workflow with `tags: vX.Y.Z` and the approved `main` commit as `sha`,
+   dry run first; the App creates the annotated tag.
 4. The workflow performs: MSRV/source/build gates -> provenance/SBOM attestations -> one newly owned
    draft with exact assets -> a verified GHCR `<version>` manifest -> prepublication
    re-verification -> explicit finalization -> anonymous verification. It never creates a `latest` or
