@@ -1,7 +1,7 @@
 # dekopon-provider-curl
 
 A production-bounded HTTP GET provider for
-[Dekopon](https://github.com/dekopon-agents/dekopon) core 0.33.0, pinned to published crates.
+[Dekopon](https://github.com/dekopon-agents/dekopon) core 0.83.0, pinned to published crates.
 
 | Manifest field | Value |
 |---|---|
@@ -233,8 +233,8 @@ See [`RELEASE.md`](RELEASE.md) for the tag-only release process.
 
 ## Distribution and license
 
-Each `v<version>` tag publishes exactly two GitHub assets (`curl-provider.wasm` and its `.sha256`),
-provenance and CycloneDX SBOM attestations, and one public one-layer OCI artifact at
+Each `v<version>` tag publishes exactly three GitHub assets (`curl-provider.wasm`, its `.sha256`, and the
+CycloneDX SBOM `curl-provider.cdx.json`), provenance and SBOM attestations, and one public one-layer OCI artifact at
 `ghcr.io/dekopon-agents/provider-curl:<version>`. It does not publish to crates.io or create
 `latest`. No repository, tag, release, or package is created by the implementation step itself.
 
