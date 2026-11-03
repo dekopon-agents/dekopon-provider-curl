@@ -24,11 +24,12 @@ constraintSets:
 # narrower than the constraint set above, and each needing its own `secret.use` Cedar statement:
 #
 #   secrets:
-#     - drn: drn:com.xrl:secret:prod:api/token
+#     - drn: drn:secret:api/token
+#       destinations: [api.example.com]
 #       source: {...}          # physical locator; never DRN-addressable, never in a prompt
 #       bindings:
 #         - id: curl-api-token
-#           capability: curl.get
+#           capabilities: [curl.get]
 #           sink: httpBearer   # httpBasic adds basicUsername
 #           allowedHosts: [api.example.com]
 #           allowedMethods: [GET]

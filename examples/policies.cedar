@@ -17,7 +17,7 @@ permit(
 permit(
     principal == Dekopon::Principal::"example-caller",
     action == Dekopon::Action::"secret.use",
-    resource == Dekopon::Secret::"drn:com.xrl:secret:prod:api/token"
+    resource == Dekopon::Secret::"drn:secret:api/token"
 ) when {
     context.capability == "curl.get"
     && context.provider == "curl"
